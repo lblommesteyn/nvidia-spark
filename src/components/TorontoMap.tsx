@@ -54,6 +54,13 @@ export function TorontoMap({ home }: Props) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
 
+    // MapLibre measures its container at init. When the dashboard mounts the
+    // map can be revealed/laid-out in the same tick, leaving a 0px canvas that
+    // never recovers (blank map). A ResizeObserver keeps the canvas sized to
+    // its container, which fixes the "map not showing" case after route reveal.
+    const ro = new ResizeObserver(() => map.resize());
+    if (containerRef.current) ro.observe(containerRef.current);
+
     map.on("load", async () => {
       // ---- Neighbourhood flow choropleth ----
       try {
@@ -255,9 +262,12 @@ export function TorontoMap({ home }: Props) {
       }
 
       setReady(true);
+      // Ensure the canvas matches the now-laid-out container.
+      map.resize();
     });
 
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };
