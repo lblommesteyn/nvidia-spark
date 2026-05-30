@@ -14,6 +14,12 @@ export interface LiveChannel {
   name: string;
   handle: string;
   description: string;
+  /**
+   * Optional pinned YouTube live video id. When set, we embed this stream
+   * directly instead of scraping the channel's `/live` page — useful for a
+   * persistent feed (e.g. CBC Toronto) whose live id is known and stable.
+   */
+  videoId?: string;
 }
 
 /** Toronto-relevant live news channels (ordered: CP24 first). */
@@ -38,9 +44,10 @@ export const LIVE_CHANNELS: LiveChannel[] = [
   },
   {
     id: "cbcnews",
-    name: "CBC News",
+    name: "CBC Toronto",
     handle: "cbcnews",
-    description: "Canada's public broadcaster — live national news network.",
+    description: "CBC's Toronto live stream — local news, weather and civic coverage.",
+    videoId: "mM3kOpgjm98",
   },
 ];
 
@@ -89,6 +96,16 @@ async function resolveVideoId(handle: string): Promise<string | null> {
 export async function resolveChannel(id: string): Promise<LiveResolution | null> {
   const channel = LIVE_CHANNELS.find((c) => c.id === id);
   if (!channel) return null;
+  // Pinned stream: embed the known live id directly, no scrape needed.
+  if (channel.videoId) {
+    return {
+      channel,
+      videoId: channel.videoId,
+      embedUrl: `https://www.youtube.com/embed/${channel.videoId}?autoplay=1&mute=1&playsinline=1`,
+      status: "live",
+      fetchedAt: nowIso(),
+    };
+  }
   try {
     const videoId = await cached(
       `livetv:${channel.handle}`,
