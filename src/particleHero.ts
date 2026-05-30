@@ -229,5 +229,67 @@ function makeRandomAttributes(count: number) {
   return { dirs, seeds };
 }
 
+export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroOptions) {
+  const mobile = window.matchMedia("(max-width: 760px)").matches;
+  const count = mobile ? 15000 : 42000;
+  const clouds = await Promise.all(scenes.map((scene, index) => sampleScene(scene, count, 1000 + index * 7919)));
+  const randomAttributes = makeRandomAttributes(count);
 
-export async function mountParticleHero(_o: ParticleHeroOptions){return()=>{};}
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: false,
+    alpha: true,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x020504, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(mobile ? 58 : 48, 1, 0.1, 100);
+  const baseCameraZ = mobile ? 9.7 : 8.4;
+  camera.position.set(0, 0, baseCameraZ);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(clouds[0].positions, 3));
+  geometry.setAttribute("positionA", new THREE.BufferAttribute(clouds[0].positions, 3));
+  geometry.setAttribute("positionB", new THREE.BufferAttribute(clouds[1].positions, 3));
+  geometry.setAttribute("colorA", new THREE.BufferAttribute(clouds[0].colors, 3));
+  geometry.setAttribute("colorB", new THREE.BufferAttribute(clouds[1].colors, 3));
+  geometry.setAttribute("randomDir", new THREE.BufferAttribute(randomAttributes.dirs, 3));
+  geometry.setAttribute("seed", new THREE.BufferAttribute(randomAttributes.seeds, 1));
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 24);
+
+  const material = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uMorph: { value: 0 },
+      uTime: { value: 0 },
+      uBillow: { value: reducedMotion ? 0 : mobile ? 0.82 : 1.34 },
+      uAmbient: { value: reducedMotion ? 0 : mobile ? 0.035 : 0.06 },
+      uShock: { value: 0 },
+      uScrollProgress: { value: 0 },
+      uScrollVelocity: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uPointSize: { value: mobile ? 2.75 : 3.1 },
+      uCursorX: { value: 0 },
+      uCursorY: { value: 0 },
+    },
+  });
+
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), mobile ? 0.22 : 0.28, 0.28, 0.72);
+  composer.addPass(bloom);
+
+
+  document.body.classList.add("is-ready");
+  window.setTimeout(() => document.querySelector("#boot")?.remove(), 650);
+  return () => { geometry.dispose(); material.dispose(); composer.dispose(); renderer.dispose(); };
+}
