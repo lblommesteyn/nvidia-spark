@@ -8,6 +8,8 @@ import { getAirQuality, getWeather } from "./sources/environment.ts";
 import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
 import { computeFlow } from "./sources/neighbourhoods.ts";
 import { getTraffic } from "./sources/traffic.ts";
+import { getTransitRoutes } from "./sources/transit-routes.ts";
+import { getGoTrains } from "./sources/go-transit.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
 import {
   forecastForBusiness,
@@ -125,6 +127,16 @@ app.get("/api/flow", async (c) => {
 /** Live traffic congestion (red/amber/green road traces). */
 app.get("/api/traffic", async (c) => {
   return c.json(await getTraffic());
+});
+
+/** TTC subway/streetcar + GO Transit route line shapes (curated GeoJSON). */
+app.get("/api/transit/routes", (c) => {
+  return c.json(getTransitRoutes());
+});
+
+/** GO Train positions (synthetic until a Metrolinx key is wired). */
+app.get("/api/transit/go", (c) => {
+  return c.json(getGoTrains());
 });
 
 // ---- Location context (the AI-friendly digest) ----

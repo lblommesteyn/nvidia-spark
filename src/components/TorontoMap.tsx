@@ -8,7 +8,7 @@ interface Props {
   home?: { lon: number; lat: number; label: string } | null;
 }
 
-type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit" | "places";
+type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit" | "routes" | "gotrains" | "places";
 
 /** Default 3D camera — a tilted, slightly rotated view so the city reads as 3D. */
 const DEFAULT_PITCH = 50;
@@ -17,9 +17,11 @@ const DEFAULT_BEARING = -18;
 const LAYER_META: { key: LayerKey; label: string }[] = [
   { key: "flow", label: "Flow areas" },
   { key: "traffic", label: "Traffic" },
+  { key: "routes", label: "Transit lines (TTC · GO)" },
+  { key: "gotrains", label: "GO Trains (live)" },
   { key: "construction", label: "Construction" },
   { key: "bikeshare", label: "Bike share" },
-  { key: "transit", label: "Transit" },
+  { key: "transit", label: "TTC vehicles" },
   { key: "places", label: "Events · Parking · Flights" },
 ];
 
@@ -32,6 +34,8 @@ export function TorontoMap({ home }: Props) {
   const [visible, setVisible] = useState<Record<LayerKey, boolean>>({
     flow: true,
     traffic: true,
+    routes: true,
+    gotrains: true,
     construction: true,
     bikeshare: true,
     transit: false,
@@ -214,6 +218,136 @@ export function TorontoMap({ home }: Props) {
         /* traffic optional */
       }
 
+      // ---- Transit route lines (TTC subway/streetcar + GO corridors) ----
+      try {
+        const routes = await api.transitRoutes();
+        map.addSource("routes", {
+          type: "geojson",
+          data: routes as unknown as GeoJSON.FeatureCollection,
+        });
+        // Dark casing under every line so colours pop on the dark basemap.
+        map.addLayer({
+          id: "route-casing",
+          type: "line",
+          source: "routes",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": "#05080c",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11, 4, 16, 9],
+            "line-opacity": 0.7,
+          },
+        });
+        // GO corridors — dashed so they read distinctly from the TTC subway.
+        map.addLayer({
+          id: "route-go",
+          type: "line",
+          source: "routes",
+          filter: ["==", ["get", "mode"], "go"],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 11, 2, 16, 4],
+            "line-dasharray": [2, 1.6],
+            "line-opacity": 0.95,
+          },
+        });
+        // TTC subway + streetcar — solid, slightly thicker.
+        map.addLayer({
+          id: "route-ttc",
+          type: "line",
+          source: "routes",
+          filter: ["in", ["get", "mode"], ["literal", ["subway", "streetcar"]]],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": [
+              "interpolate", ["linear"], ["zoom"],
+              11, ["match", ["get", "mode"], "subway", 3, 1.6],
+              16, ["match", ["get", "mode"], "subway", 6, 3.5],
+            ],
+            "line-opacity": 0.95,
+          },
+        });
+        // Route name labels following the lines.
+        map.addLayer({
+          id: "route-labels",
+          type: "symbol",
+          source: "routes",
+          layout: {
+            "symbol-placement": "line",
+            "text-field": ["get", "line"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 15, 13],
+            "text-letter-spacing": 0.04,
+            "symbol-spacing": 260,
+          },
+          paint: {
+            "text-color": "#e9eef5",
+            "text-halo-color": ["get", "color"],
+            "text-halo-width": 1.6,
+          },
+        });
+        map.on("click", "route-ttc", (e) => {
+          const p = e.features?.[0]?.properties as { name: string } | undefined;
+          if (!p) return;
+          new maplibregl.Popup({ offset: 6 }).setLngLat(e.lngLat).setHTML(`<strong>${p.name}</strong>`).addTo(map);
+        });
+        map.on("click", "route-go", (e) => {
+          const p = e.features?.[0]?.properties as { name: string } | undefined;
+          if (!p) return;
+          new maplibregl.Popup({ offset: 6 }).setLngLat(e.lngLat).setHTML(`<strong>${p.name}</strong>`).addTo(map);
+        });
+      } catch {
+        /* routes optional */
+      }
+
+      // ---- GO Trains (live-ish moving dots along the corridors) ----
+      try {
+        const go = await api.goTrains();
+        map.addSource("go-trains", {
+          type: "geojson",
+          data: go as unknown as GeoJSON.FeatureCollection,
+        });
+        map.addLayer({
+          id: "go-train-glow",
+          type: "circle",
+          source: "go-trains",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 7, 15, 14],
+            "circle-color": "#0F7A3D",
+            "circle-opacity": 0.25,
+            "circle-blur": 1,
+          },
+        });
+        map.addLayer({
+          id: "go-train-pts",
+          type: "circle",
+          source: "go-trains",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 15, 6],
+            "circle-color": "#16a34a",
+            "circle-stroke-color": "#eafff1",
+            "circle-stroke-width": 1.4,
+            "circle-opacity": 0.95,
+          },
+        });
+        map.on("click", "go-train-pts", (e) => {
+          const p = e.features?.[0]?.properties as
+            | { line: string; direction: string; speedKmh: number; nextStation: string }
+            | undefined;
+          if (!p) return;
+          new maplibregl.Popup({ offset: 8 })
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<strong>${p.line}</strong><br/>${p.direction} · ${p.speedKmh} km/h<br/>Next: ${p.nextStation}`,
+            )
+            .addTo(map);
+        });
+        map.on("mouseenter", "go-train-pts", () => (map.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", "go-train-pts", () => (map.getCanvas().style.cursor = ""));
+      } catch {
+        /* GO trains optional */
+      }
+
       // ---- Dense point feeds ----
       try {
         const geo = await api.mapGeo();
@@ -347,6 +481,12 @@ export function TorontoMap({ home }: Props) {
     set("flow-line", visible.flow);
     set("traffic-glow", visible.traffic);
     set("traffic-line", visible.traffic);
+    set("route-casing", visible.routes);
+    set("route-go", visible.routes);
+    set("route-ttc", visible.routes);
+    set("route-labels", visible.routes);
+    set("go-train-glow", visible.gotrains);
+    set("go-train-pts", visible.gotrains);
     set("closure-pts", visible.construction);
     set("bike-pts", visible.bikeshare);
     set("transit-pts", visible.transit);
@@ -370,6 +510,8 @@ export function TorontoMap({ home }: Props) {
       };
       if (traffic.status === "fulfilled") update("traffic", traffic.value);
       if (flow.status === "fulfilled") update("flow", flow.value);
+      // GO trains glide on their own faster cadence (see below); pull fresh here too.
+      api.goTrains().then((go) => update("go-trains", go)).catch(() => {});
       if (geo.status === "fulfilled") {
         update("geo", geo.value);
         const cats = geo.value.features.map((f) => f.properties.category);
@@ -381,6 +523,24 @@ export function TorontoMap({ home }: Props) {
       }
     };
     const t = setInterval(refresh, 45_000);
+    return () => clearInterval(t);
+  }, [ready]);
+
+  // GO trains glide: re-pull their (time-based) positions on a fast cadence.
+  useEffect(() => {
+    if (!ready) return;
+    const tick = async () => {
+      const map = mapRef.current;
+      if (!map) return;
+      const src = map.getSource("go-trains") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      try {
+        src.setData((await api.goTrains()) as unknown as GeoJSON.FeatureCollection);
+      } catch {
+        /* keep last positions */
+      }
+    };
+    const t = setInterval(tick, 5_000);
     return () => clearInterval(t);
   }, [ready]);
 

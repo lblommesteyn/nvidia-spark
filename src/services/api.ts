@@ -207,6 +207,37 @@ export interface FlowCollection {
 
 export type Congestion = "free" | "moderate" | "heavy" | "severe";
 
+export type TransitMode = "subway" | "streetcar" | "go";
+
+export interface RouteCollection {
+  type: "FeatureCollection";
+  features: {
+    type: "Feature";
+    properties: { id: string; name: string; line: string; mode: TransitMode; color: string };
+    geometry: { type: "LineString"; coordinates: [number, number][] };
+  }[];
+}
+
+export interface GoTrainCollection {
+  type: "FeatureCollection";
+  status: "demo";
+  fetchedAt: string;
+  note: string;
+  attribution: string;
+  features: {
+    type: "Feature";
+    properties: {
+      id: string;
+      line: string;
+      color: string;
+      direction: "inbound" | "outbound";
+      speedKmh: number;
+      nextStation: string;
+    };
+    geometry: { type: "Point"; coordinates: [number, number] };
+  }[];
+}
+
 export interface TrafficCollection {
   type: "FeatureCollection";
   status: "live" | "demo";
@@ -294,6 +325,10 @@ export const api = {
   flow: () => fetch("/api/flow").then(json<FlowCollection>),
 
   traffic: () => fetch("/api/traffic").then(json<TrafficCollection>),
+
+  transitRoutes: () => fetch("/api/transit/routes").then(json<RouteCollection>),
+
+  goTrains: () => fetch("/api/transit/go").then(json<GoTrainCollection>),
 
   agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number }) =>
     fetch("/api/agent", {

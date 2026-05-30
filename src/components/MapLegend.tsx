@@ -15,6 +15,12 @@ export function MapLegend() {
       <span class="map-legend-item"><i style={{ background: "#2dd4bf" }} />OK</span>
       <span class="map-legend-item"><i style={{ background: "#4cc9f0" }} />Full</span>
       <span class="map-legend-item"><i style={{ background: "#9b5de5" }} />Transit</span>
+      <span class="map-legend-sep">lines:</span>
+      <span class="map-legend-item"><i style={{ background: "#F8C300" }} />L1</span>
+      <span class="map-legend-item"><i style={{ background: "#00923F" }} />L2</span>
+      <span class="map-legend-item"><i style={{ background: "#A21A68" }} />L4</span>
+      <span class="map-legend-item"><i style={{ background: "#DA251D" }} />Streetcar</span>
+      <span class="map-legend-item"><i style={{ background: "#16a34a" }} />GO Train</span>
       <span class="map-legend-sep">flow:</span>
       <span class="map-legend-item"><i class="legend-grad" />low → intense</span>
     </div>
