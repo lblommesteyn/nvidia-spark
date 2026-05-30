@@ -73,4 +73,46 @@ const radiusToPixels = (lat: number, lng: number, meters: number, zoom: number) 
   const lngDelta = meters / metersPerLngDegree;
   return Math.abs(lonToTile(lng + lngDelta, zoom) - lonToTile(lng, zoom)) * tileSize;
 };
-export function mountTorontoMap(_c: HTMLElement, _z=13){return()=>{};}
+
+export function mountTorontoMap(container: HTMLElement, zoom = 13) {
+  const render = () => {
+    const width = container.clientWidth || 640;
+    const height = container.clientHeight || 360;
+    const centerX = lonToTile(toronto.lng, zoom);
+    const centerY = latToTile(toronto.lat, zoom);
+    const tileX = Math.floor(centerX);
+    const tileY = Math.floor(centerY);
+    const offsetX = (centerX - tileX) * tileSize;
+    const offsetY = (centerY - tileY) * tileSize;
+
+    container.innerHTML = "";
+    const layer = document.createElement("div");
+    layer.className = "map-tile-layer";
+    container.appendChild(layer);
+
+    for (let dy = -2; dy <= 2; dy += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        const img = document.createElement("img");
+        const subdomain = cartoSubdomains[Math.abs(tileX + dx + tileY + dy) % cartoSubdomains.length];
+        img.alt = "";
+        img.decoding = "async";
+        img.loading = "lazy";
+        img.src = `https://${subdomain}.basemaps.cartocdn.com/dark_all/${zoom}/${tileX + dx}/${tileY + dy}.png`;
+        img.style.left = `${width / 2 + dx * tileSize - offsetX}px`;
+        img.style.top = `${height / 2 + dy * tileSize - offsetY}px`;
+        layer.appendChild(img);
+      }
+    }
+
+    const businessPosition = markerPosition(business.lat, business.lng, zoom, centerX, centerY, width, height);
+    const radius = Math.max(86, radiusToPixels(business.lat, business.lng, business.radiusMeters, zoom));
+    const radiusElement = document.createElement("span");
+    radiusElement.className = "map-radius";
+    radiusElement.style.left = `${businessPosition.x}px`;
+    radiusElement.style.top = `${businessPosition.y}px`;
+    radiusElement.style.width = `${radius * 2}px`;
+    radiusElement.style.height = `${radius * 2}px`;
+    container.appendChild(radiusElement);
+  render();
+  return () => {};
+}
