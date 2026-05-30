@@ -87,10 +87,46 @@ Demand Forecast tile footer shows `model-reasoned · nemotron/…`.
 
 ---
 
-## 2. Build the fine‑tuning dataset (distillation)
+## 2. Build the fine‑tuning dataset
 
-We fine‑tune the **Nano‑8B student** to reproduce the **Super‑49B teacher's**
-demand forecasts from live Toronto signals. The generator already wires this up:
+There are **two** ways to produce `data/forecast-train.jsonl`, and the best run
+uses both:
+
+### 2a. Real historical data (recommended — the ground‑truth label)
+
+`scripts/backfill_dataset.py` builds a genuine supervised set by joining two free
+sources, so the model learns from **what actually happened**, not a guess:
+
+- **Label** — Bike Share Toronto **ridership** (hourly trip counts) = a real city
+  demand proxy. (~7M trips/year → ~8,800 hourly rows.)
+- **Features** — Open‑Meteo **historical** hourly weather + calendar / holiday /
+  time‑of‑day / season.
+
+```bash
+# 1. Download a year of ridership (single CSV inside the zip, ~1 GB extracted)
+curl -L -o /tmp/bs2024.zip \
+  https://opendata.toronto.ca/toronto.parking.authority/bike-share-toronto-ridership-data/bikeshare-ridership-2024.zip
+unzip -o /tmp/bs2024.zip -d /tmp
+
+# 2. Stream it -> demand-2024.jsonl (tabular) + forecast-train/val.jsonl (instruction)
+python3 scripts/backfill_dataset.py --csv /tmp/bikeshare-ridership-2024.csv --year 2024
+```
+
+This writes:
+- `data/demand-<year>.jsonl` — one row/hour: features + real `demand`,
+  `demandCasual`, `demandMember`, `demandNorm` (use this to train a numeric
+  regressor backbone, or for evaluation).
+- `data/forecast-train.jsonl` / `data/forecast-val.jsonl` — instruction JSONL
+  (signals → forecast JSON) with `level`/`score` derived from **real demand**,
+  90/10 split. This is what the LoRA job in §3 consumes.
+
+> Run multiple years (`--year 2023`, `2025`) and concatenate for a bigger, more
+> balanced set. The label skews toward `low` (nights/winter dominate the year) —
+> oversample `elevated`/`surge` hours or class‑weight if you train a regressor.
+> Add events/transit history later for richer features; weather + calendar
+> already capture most of the bike‑share demand variance.
+
+### 2b. Live distillation (augment / narrative layer)
 
 - `server/ai/dataset.ts` — builds `{messages|prompt, completion}` rows from a
   context snapshot. When a NIM is active, the teacher (Super‑49B, thinking on)
