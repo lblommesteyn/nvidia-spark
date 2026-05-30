@@ -3,15 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="CityFlow monitors Toronto city signals and recommends operational actions for small businesses." />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23020403'/%3E%3Cpath d='M12 42C24 48 40 48 52 42' fill='none' stroke='%237effc2' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='24' r='5' fill='%2344a8ff'/%3E%3Ccircle cx='32' cy='20' r='5' fill='%237effc2'/%3E%3Ccircle cx='48' cy='28' r='5' fill='%23ffb940'/%3E%3C/svg%3E" />
+    <meta
+      name="description"
+      content="CityFlow monitors Toronto city signals and recommends operational actions for small businesses."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23020403'/%3E%3Cpath d='M12 42C24 48 40 48 52 42' fill='none' stroke='%237effc2' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='24' r='5' fill='%2344a8ff'/%3E%3Ccircle cx='32' cy='20' r='5' fill='%237effc2'/%3E%3Ccircle cx='48' cy='28' r='5' fill='%23ffb940'/%3E%3C/svg%3E"
+    />
     <title>CityFlow</title>
   </head>
   <body>
     <a class="skip-link" href="#problem">Skip to content</a>
+
     <div id="boot" class="boot-terminal" aria-live="polite">
       <section class="boot-window" aria-label="CityFlow boot sequence">
-        <header><span>CITYFLOW LOCAL RUNTIME</span><span>TORONTO / DGX-SPARK</span></header>
+        <header>
+          <span>CITYFLOW LOCAL RUNTIME</span>
+          <span>TORONTO / DGX-SPARK</span>
+        </header>
         <div class="boot-body">
           <div class="boot-log">
             <p>&gt; loading city_signal_kernel</p>
@@ -23,6 +33,7 @@
         </div>
       </section>
     </div>
+
     <main id="app">
       <section class="landing-intro" aria-labelledby="landing-title">
         <div class="landing-shell">
@@ -31,7 +42,10 @@
             <strong>Toronto operating intelligence for physical businesses</strong>
           </a>
           <header class="landing-nav" aria-label="Primary">
-            <a class="landing-brand" href="#app" aria-label="CityFlow home"><span aria-hidden="true"></span>CityFlow</a>
+            <a class="landing-brand" href="#app" aria-label="CityFlow home">
+              <span aria-hidden="true"></span>
+              CityFlow
+            </a>
             <nav>
               <a href="#terminal">Terminal</a>
               <a href="#agents">Agents</a>
@@ -42,7 +56,9 @@
           <div class="landing-copy">
             <p class="eyebrow">NVIDIA Spark Hack Toronto</p>
             <h1 id="landing-title">Operate before the city reaches your storefront.</h1>
-            <p>CityFlow reads transit, events, weather, roads, and construction, then turns those signals into manager-ready decisions for Toronto small businesses.</p>
+            <p>
+              CityFlow reads transit, events, weather, roads, and construction, then turns those signals into manager-ready decisions for Toronto small businesses.
+            </p>
             <div class="landing-actions">
               <a class="landing-button primary" href="#hero">Watch the city assemble</a>
               <button class="landing-button" type="button" data-open-terminal>Open terminal</button>
@@ -50,7 +66,75 @@
           </div>
         </div>
       </section>
+
+      <section id="hero" class="morph-hero" aria-labelledby="hero-title">
+        <div id="hero-pin" class="hero-pin">
+          <canvas id="particle-canvas" aria-hidden="true"></canvas>
+          <div class="hero-scanline" aria-hidden="true"></div>
+          <div class="story-ribbon" aria-hidden="true">
+            <p data-story-line="0">Start with the <mark>city</mark>.</p>
+            <p data-story-line="1">Every street has a <mark>signal</mark>.</p>
+            <p data-story-line="2">A delay becomes a <mark>demand shift</mark>.</p>
+            <p data-story-line="3">The forecast finds the <mark>curve</mark>.</p>
+            <p data-story-line="4">The counter gets an <mark>action</mark>.</p>
+            <p data-story-line="5">Signals resolve into <mark>local context</mark>.</p>
+            <p data-story-line="6">Managers operate <mark>before the spike</mark>.</p>
+          </div>
+          <nav class="scene-nav" aria-label="Particle story progress">
+            <span data-scene-dot="0"></span>
+            <span data-scene-dot="1"></span>
+            <span data-scene-dot="2"></span>
+            <span data-scene-dot="3"></span>
+            <span data-scene-dot="4"></span>
+            <span data-scene-dot="5"></span>
+            <span data-scene-dot="6"></span>
+          </nav>
+          <article class="scene-copy is-active" data-scene-copy="0">
+            <p class="eyebrow">The quiet layer</p>
+            <h1 id="hero-title">At first, the city looks still.</h1>
+            <p>
+              Then the operating signals start to surface, connect, and move faster than a manager can track by hand.
+            </p>
+          </article>
+          <article class="scene-copy" data-scene-copy="1">
+            <p class="eyebrow">City silhouette</p>
+            <h2>CN Tower, bank towers, and the <mark>city layer</mark> CityFlow reads every hour.</h2>
+            <p>The skyline becomes a data surface: Toronto geography, local timing, and the businesses that feel every disruption first.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="2">
+            <p class="eyebrow">Transit signal</p>
+            <h2>A TTC streetcar delay is not just transit. It is a <mark>foot-traffic event</mark>.</h2>
+            <p>Commute disruption shifts the morning rush, curbside pickup, delivery timing, and staffing demand around the storefront.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="3">
+            <p class="eyebrow">Forecast layer</p>
+            <h2>Particles snap from disruption into a <mark>demand curve</mark>.</h2>
+            <p>CityFlow estimates neighborhood demand direction, confidence, timing, and revenue exposure over the next 24 to 72 hours.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="4">
+            <p class="eyebrow">Small business layer</p>
+            <h2>The forecast turns into <mark>counter-level decisions</mark>.</h2>
+            <p>Increase prep, adjust staffing, route delivery, or push a timed promotion with source attribution and clear confidence.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="5">
+            <p class="eyebrow">Signal layer</p>
+            <h2>The map breaks into <mark>neighborhood signals</mark> and live pins.</h2>
+            <p>CityFlow reads public Toronto data and local context continuously instead of waiting for a manager to check five apps.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="6">
+            <p class="eyebrow">CityFlow</p>
+            <h2>A Bloomberg Terminal for <mark>physical businesses</mark>.</h2>
+            <p>Autonomous local intelligence for cafes, retailers, restaurants, and service businesses across Toronto.</p>
+            <div class="hero-actions">
+              <button class="terminal-button primary" type="button" data-open-terminal>Open CityFlow Terminal</button>
+              <a class="terminal-button" href="#problem">Read the case</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
     </main>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
