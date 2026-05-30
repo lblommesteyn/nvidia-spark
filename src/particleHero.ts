@@ -104,5 +104,45 @@ void main() {
 }
 `;
 
+const mulberry32 = (seed: number) => {
+  let value = seed;
+  return () => {
+    value |= 0;
+    value = (value + 0x6d2b79f5) | 0;
+    let result = Math.imul(value ^ (value >>> 15), 1 | value);
+    result = (result + Math.imul(result ^ (result >>> 7), 61 | result)) ^ result;
+    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const loadSvgImage = async (svg: string) => {
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const image = new Image();
+  const loaded = new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Failed to load silhouette"));
+  });
+  image.src = url;
+
+  try {
+    await image.decode().catch(() => loaded);
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const pickColor = (scene: SceneDefinition, rng: () => number) => {
+  const palette = scene.palette ?? [scene.color];
+  const base = palette[Math.floor(rng() * palette.length)] ?? scene.color;
+  const jitter = 0.88 + rng() * 0.2;
+  return [
+    Math.min(1, base[0] * jitter),
+    Math.min(1, base[1] * jitter),
+    Math.min(1, base[2] * jitter),
+  ] as [number, number, number];
+};
+
 
 export async function mountParticleHero(_o: ParticleHeroOptions){return()=>{};}
