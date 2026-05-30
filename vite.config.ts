@@ -17,5 +17,17 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    watch: {
+      // Don't watch the Python venv / training artifacts / data living in-repo;
+      // they contain tens of thousands of files and exhaust the inotify limit
+      // (ENOSPC: System limit for number of file watchers reached).
+      ignored: [
+        "**/.venv/**",
+        "**/out/**",
+        "**/data/**",
+        "**/__pycache__/**",
+        "**/*.jsonl",
+      ],
+    },
   },
 });

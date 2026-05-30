@@ -25,6 +25,7 @@ Validate the data first (no GPU needed):
     python3 scripts/validate_dataset.py data/forecast-loc-train.jsonl
 """
 import argparse
+import inspect
 import sys
 
 
@@ -90,12 +91,16 @@ def main(argv):
             bnb_4bit_use_double_quant=True,
         )
 
+    # transformers>=5 renamed `torch_dtype` -> `dtype`; pick whichever the
+    # installed version accepts so this runs on old and new stacks.
+    _fp_params = inspect.signature(AutoModelForCausalLM.from_pretrained).parameters
+    _dtype_kw = "dtype" if ("dtype" in _fp_params or "torch_dtype" not in _fp_params) else "torch_dtype"
     model = AutoModelForCausalLM.from_pretrained(
         args.base,
-        torch_dtype=torch.bfloat16,
         device_map="auto",
         quantization_config=quant,
         trust_remote_code=True,
+        **{_dtype_kw: torch.bfloat16},
     )
     model.config.use_cache = False
 
@@ -120,7 +125,7 @@ def main(argv):
 
     ds = ds.map(to_text, remove_columns=ds["train"].column_names)
 
-    sft = SFTConfig(
+    sft_kwargs = dict(
         output_dir=args.out,
         num_train_epochs=args.epochs,
         max_steps=args.max_steps,
@@ -135,20 +140,30 @@ def main(argv):
         save_steps=200,
         save_total_limit=2,
         bf16=True,
-        max_seq_length=args.max_seq_len,
         packing=False,
         dataset_text_field="text",
         seed=args.seed,
         report_to="none",
     )
+    # trl>=1 renamed SFTConfig.max_seq_length -> max_length.
+    _sft_params = inspect.signature(SFTConfig.__init__).parameters
+    if "max_length" in _sft_params:
+        sft_kwargs["max_length"] = args.max_seq_len
+    elif "max_seq_length" in _sft_params:
+        sft_kwargs["max_seq_length"] = args.max_seq_len
+    sft = SFTConfig(**sft_kwargs)
 
+    # trl>=0.12 deprecated `tokenizer=` in favor of `processing_class=`
+    # (removed entirely in trl>=0.20).
+    _trainer_params = inspect.signature(SFTTrainer.__init__).parameters
+    _tok_kw = "processing_class" if "processing_class" in _trainer_params else "tokenizer"
     trainer = SFTTrainer(
         model=model,
         args=sft,
         train_dataset=ds["train"],
         eval_dataset=ds["validation"],
         peft_config=lora,
-        tokenizer=tokenizer,
+        **{_tok_kw: tokenizer},
     )
 
     print("Starting LoRA fine-tune...")

@@ -8,3 +8,5 @@ data/*.db
 data/*.db-*
 data/*.jsonl
 data/*.json
+.venv/
+out/
