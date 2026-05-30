@@ -353,6 +353,60 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
     material.uniforms.uScrollProgress.value = progress;
   };
 
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    width = Math.max(1, rect.width);
+    height = Math.max(1, rect.height);
+    renderer.setSize(width, height, false);
+    composer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    material.uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio || 1, 2);
+  };
+
+  const pointerMove = (event: PointerEvent) => {
+    targetMouseX = (event.clientX / window.innerWidth - 0.5) * 0.42;
+    targetMouseY = (event.clientY / window.innerHeight - 0.5) * 0.28;
+  };
+
+  const render = (time = 0) => {
+    if (!visible) {
+      return;
+    }
+
+    mouseX += (targetMouseX - mouseX) * 0.045;
+    mouseY += (targetMouseY - mouseY) * 0.045;
+    currentShock += (targetShock - currentShock) * 0.08;
+    currentScrollVelocity += (targetScrollVelocity - currentScrollVelocity) * 0.08;
+    cursorSkew += (targetMouseX * -9 - cursorSkew) * 0.055;
+    camera.position.x = mouseX;
+    camera.position.y = -mouseY;
+    camera.position.z =
+      baseCameraZ -
+      (reducedMotion ? 0 : currentShock * (mobile ? 0.45 : 1.05)) -
+      currentProgress * (mobile ? 0.18 : 0.42);
+    camera.lookAt(0, 0, 0);
+    points.rotation.y = mouseX * 0.08 + currentProgress * 0.18;
+    points.rotation.x = mouseY * 0.06 + currentShock * 0.03;
+    material.uniforms.uTime.value = time * 0.001;
+    material.uniforms.uShock.value = reducedMotion ? 0 : currentShock;
+    material.uniforms.uScrollVelocity.value = reducedMotion ? 0 : currentScrollVelocity;
+    material.uniforms.uCursorX.value = reducedMotion ? 0 : mouseX;
+    material.uniforms.uCursorY.value = reducedMotion ? 0 : mouseY;
+    rootStyle.setProperty("--cursor-skew", reducedMotion ? "0deg" : `${cursorSkew.toFixed(3)}deg`);
+    composer.render();
+    rafId = window.requestAnimationFrame(render);
+  };
+
+  const visibilityChange = () => {
+    visible = !document.hidden;
+    if (visible) {
+      rafId = window.requestAnimationFrame(render);
+    } else {
+      window.cancelAnimationFrame(rafId);
+    }
+  };
+
 
   document.body.classList.add("is-ready");
   window.setTimeout(() => document.querySelector("#boot")?.remove(), 650);
