@@ -117,4 +117,59 @@ export const scenes: SceneDefinition[] = [
       <rect x="674" y="190" width="44" height="196" rx="4"/>
     `),
   },
+  {
+    id: "coffee-cup",
+    label: "Storefront coffee cup",
+    color: [0.75, 1, 0.82],
+    palette: [[0.75, 1, 0.82], [1, 0.72, 0.25], [0.55, 0.95, 1]],
+    depth: 0.48,
+    svg: svgFrame(`
+      <path d="M330 210 L670 210 L628 500 L372 500 Z"/>
+      <path d="M350 258 L650 258" fill="none" stroke-width="34"/>
+      <path d="M386 500 L614 500" fill="none" stroke-width="26"/>
+      <path d="M675 290 C775 282 802 355 748 412 C715 447 668 430 646 392" fill="none" stroke-width="42"/>
+      <path d="M398 158 C358 126 414 94 380 62" fill="none" stroke-width="22"/>
+      <path d="M500 158 C460 126 516 94 482 62" fill="none" stroke-width="22"/>
+      <path d="M602 158 C562 126 618 94 584 62" fill="none" stroke-width="22"/>
+      <rect x="410" y="316" width="180" height="82" rx="18" fill="black" stroke="none"/>
+      <text x="500" y="374" text-anchor="middle" font-family="Impact, Arial Black, sans-serif" font-size="54" stroke="none">CAFE</text>
+      <path d="M302 498 L700 498" fill="none" stroke-width="18"/>
+    `),
+  },
+  {
+    id: "map-signals",
+    label: "Toronto neighborhoods and live signal pins",
+    color: [0.49, 1, 0.75],
+    palette: [
+      [0.95, 0.16, 0.2],
+      [0.24, 0.67, 1],
+      [1, 0.72, 0.25],
+      [0.49, 1, 0.75],
+    ],
+    depth: 0.98,
+    svg: svgFrame(`
+      <g fill="none" stroke-width="16">
+        <path d="M170 128 L800 116 L866 486 L202 512 Z"/>
+        <path d="M246 136 L292 504"/>
+        <path d="M354 132 L382 498"/>
+        <path d="M468 128 L480 496"/>
+        <path d="M585 124 L568 493"/>
+        <path d="M710 120 L660 490"/>
+        <path d="M188 220 L824 210"/>
+        <path d="M196 312 L842 300"/>
+        <path d="M204 408 L856 392"/>
+        <path d="M238 500 C324 426 395 396 484 374 C594 346 700 286 848 170"/>
+        <path d="M188 352 C290 310 390 312 486 268 C588 222 682 224 820 256"/>
+      </g>
+      <g stroke="none">
+        <circle cx="300" cy="300" r="44"/>
+        <circle cx="480" cy="372" r="52"/>
+        <circle cx="650" cy="244" r="46"/>
+        <circle cx="778" cy="402" r="40"/>
+        <circle cx="560" cy="168" r="34"/>
+        <circle cx="224" cy="438" r="34"/>
+      </g>
+      <path d="M480 372 L650 244 L778 402 L480 372 L300 300 L560 168 L650 244" fill="none" stroke-width="12"/>
+    `),
+  },
 ];
