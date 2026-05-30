@@ -178,6 +178,73 @@
         </div>
       </section>
 
+      <section id="recommendations" class="content-section recommendation-section reveal" aria-labelledby="recommendations-title">
+        <p class="eyebrow">Toronto demo scenarios</p>
+        <h2 id="recommendations-title">Live recommendation cards built like operating orders.</h2>
+        <div class="recommendation-grid">
+          <article>
+            <header><span>PRIORITY 01</span><strong>Transit disruption</strong></header>
+            <h3>Reduce front-of-house staffing slightly and push pickup promotion.</h3>
+            <p>TTC disruption near the morning commute window is likely to lower walk-ins and shift order timing.</p>
+            <footer><span>Timing: 7-10 AM</span><span>Confidence: Medium</span><span>Source: TTC + roads</span></footer>
+          </article>
+          <article>
+            <header><span>PRIORITY 02</span><strong>Event spike</strong></header>
+            <h3>Increase prep by 21% and schedule one extra rush staff member.</h3>
+            <p>A nearby arena event plus favorable weather should lift pre-event and post-event demand.</p>
+            <footer><span>Timing: 4-10 PM</span><span>Confidence: High</span><span>Source: Events + weather</span></footer>
+          </article>
+          <article>
+            <header><span>PRIORITY 03</span><strong>Construction access risk</strong></header>
+            <h3>Shift messaging to pickup and reduce walk-in staffing exposure.</h3>
+            <p>Multi-day construction near the storefront may suppress browsing and redirect demand to planned orders.</p>
+            <footer><span>Timing: 72H</span><span>Confidence: Medium</span><span>Source: Construction + radius</span></footer>
+          </article>
+        </div>
+      </section>
+
+      <section id="nvidia" class="nvidia-band reveal" aria-labelledby="nvidia-title">
+        <div>
+          <p class="eyebrow">Local-first AI</p>
+          <h2 id="nvidia-title">Designed for open models on NVIDIA DGX Spark-class hardware.</h2>
+          <p>
+            Local inference handles summarization, classification, agent planning, and recommendation generation while cached city data keeps the demo reliable offline.
+          </p>
+        </div>
+        <dl>
+          <div><dt>Runtime</dt><dd>Local model active</dd></div>
+          <div><dt>GPU</dt><dd>Embedding + reranking ready</dd></div>
+          <div><dt>Data</dt><dd>Toronto Open Data cache</dd></div>
+          <div><dt>Mode</dt><dd>Human approval first</dd></div>
+        </dl>
+      </section>
+
+      <footer class="footer-cta">
+        <p class="eyebrow">CityFlow</p>
+        <h2>Predict the city. Operate before the spike.</h2>
+        <button class="terminal-button primary" type="button" data-open-terminal>Open CityFlow Terminal</button>
+        <a class="terminal-button" href="#hero">Replay the particle story</a>
+        <p class="map-attribution">Map tiles &copy; OpenStreetMap contributors and &copy; CARTO.</p>
+      </footer>
+    </main>
+
+    <section id="terminal-app" class="terminal-app" aria-labelledby="terminal-app-title" aria-hidden="true">
+      <div class="terminal-app-shell" role="dialog" aria-modal="true" aria-label="CityFlow terminal demo">
+        <header class="terminal-app-header">
+          <div>
+            <p class="eyebrow">CityFlow terminal</p>
+            <h2 id="terminal-app-title">Harbour Grind / Financial District</h2>
+            <p class="terminal-context">123 Bay Street, Toronto &middot; 1.8 km operating radius &middot; updated 30s ago</p>
+          </div>
+          <button class="terminal-button" type="button" data-close-terminal>Close terminal</button>
+        </header>
+        <div class="terminal-command-grid">
+          <section class="terminal-command-card primary-readout">
+            <span>Business</span>
+            <strong>HARBOUR GRIND</strong>
+            <p>Financial District cafe / weekday rush profile</p>
+          </section>
+
     </main>
 
     <script type="module" src="/src/main.ts"></script>
