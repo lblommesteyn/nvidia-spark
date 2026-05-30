@@ -407,8 +407,33 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
     }
   };
 
+  const trigger = ScrollTrigger.create({
+    trigger: "#hero",
+    start: "top top",
+    end: "bottom bottom",
+    pin: "#hero-pin",
+    scrub: true,
+    anticipatePin: 1,
+    onUpdate: (self) => updateProgress(self.progress, self.getVelocity()),
+  });
 
-  document.body.classList.add("is-ready");
-  window.setTimeout(() => document.querySelector("#boot")?.remove(), 650);
-  return () => { geometry.dispose(); material.dispose(); composer.dispose(); renderer.dispose(); };
+  resize();
+  updateProgress(0);
+  window.addEventListener("resize", resize);
+  window.addEventListener("pointermove", pointerMove);
+  document.addEventListener("visibilitychange", visibilityChange);
+  rafId = window.requestAnimationFrame(render);
+
+  return () => {
+    trigger.kill();
+    window.removeEventListener("resize", resize);
+    window.removeEventListener("pointermove", pointerMove);
+    document.removeEventListener("visibilitychange", visibilityChange);
+    window.cancelAnimationFrame(rafId);
+    rootStyle.setProperty("--cursor-skew", "0deg");
+    geometry.dispose();
+    material.dispose();
+    composer.dispose();
+    renderer.dispose();
+  };
 }
