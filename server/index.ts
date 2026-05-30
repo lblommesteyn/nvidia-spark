@@ -21,6 +21,13 @@ import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
 import { findSimilarMoments } from "./ai/patterns.ts";
 import { startSnapshotService } from "./ai/snapshot.ts";
+import { startMonitor } from "./ai/monitor.ts";
+import {
+  recentAlerts,
+  registerSseClient,
+  unregisterSseClient,
+  sseClientCount,
+} from "./ai/alerts.ts";
 import { activeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
@@ -44,7 +51,13 @@ async function loadAllRecords(): Promise<CivicRecord[]> {
 }
 
 app.get("/api/health", (c) =>
-  c.json({ ok: true, provider: activeProvider(), sources: CIVIC_SOURCES.map((s) => s.key) }),
+  c.json({
+    ok: true,
+    provider: activeProvider(),
+    sources: CIVIC_SOURCES.map((s) => s.key),
+    sseClients: sseClientCount(),
+    patternRows: snapshots.count(),
+  }),
 );
 
 // ---- AI-friendly manifest (tools + endpoints) ----
@@ -290,6 +303,43 @@ function pointFromQuery(lon?: string, lat?: string): GeoPoint {
   return Number.isFinite(x) && Number.isFinite(y) ? { lon: x, lat: y } : TORONTO;
 }
 
+// ---- Proactive alerts ----
+app.get("/api/alerts", (c) => {
+  const n = Math.min(Number(c.req.query("n") ?? 20), 100);
+  return c.json(recentAlerts(n));
+});
+
+// Server-Sent Events stream — browser clients connect here to receive alerts in real time.
+app.get("/api/alerts/stream", (c) => {
+  const stream = new ReadableStream<string>({
+    start(controller) {
+      const clientId = registerSseClient(controller);
+      // Send a connected confirmation and recent history immediately.
+      try {
+        controller.enqueue(`: connected\n\n`);
+        for (const alert of recentAlerts(10).reverse()) {
+          controller.enqueue(`data: ${JSON.stringify(alert)}\n\n`);
+        }
+      } catch { /* ignore — client may have disconnected */ }
+
+      // Clean up when the browser tab closes or navigates away.
+      c.req.raw.signal?.addEventListener("abort", () => {
+        unregisterSseClient(clientId);
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+});
+
 // ---- Historical patterns API ----
 app.get("/api/patterns", async (c) => {
   const p = pointFromQuery(c.req.query("lon"), c.req.query("lat"));
@@ -315,3 +365,6 @@ console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${
 
 // Start background snapshot capture — builds the historical pattern library over time.
 startSnapshotService(15 * 60_000);
+
+// Start proactive alert monitor — diffs signals every 5 min and broadcasts alerts via SSE.
+startMonitor(5 * 60_000);

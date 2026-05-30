@@ -4,6 +4,7 @@ import { MapLegend } from "./components/MapLegend";
 import { LiveTV } from "./components/LiveTV";
 import { BusinessSetup } from "./components/BusinessSetup";
 import { AgentChat } from "./components/AgentChat";
+import { AlertFeed } from "./components/AlertFeed";
 import { Panel } from "./components/Panel";
 import { DashboardGrid, resetDashboardLayout, type GridTile } from "./components/DashboardGrid";
 import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type LocationContext, type WeeklyForecast } from "./services/api";
@@ -138,9 +139,17 @@ export function App() {
 
   const tiles: GridTile[] = [
     {
-      id: "agent",
+      id: "alerts",
       x: 0,
       y: 0,
+      w: 12,
+      h: 5,
+      content: <AlertFeed />,
+    },
+    {
+      id: "agent",
+      x: 0,
+      y: 5,
       w: 12,
       h: 5,
       content: selected ? (
@@ -162,7 +171,7 @@ export function App() {
     {
       id: "forecast",
       x: 0,
-      y: 5,
+      y: 15,
       w: 12,
       h: 6,
       content: (
