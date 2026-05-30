@@ -71,6 +71,68 @@ export async function getWeather(p: GeoPoint): Promise<SourceResult<WeatherNow>>
   }
 }
 
+export interface WeatherHour {
+  /** ISO local timestamp, e.g. 2026-05-30T14:00 */
+  time: string;
+  temperatureC: number;
+  precipitationMm: number;
+  windKph: number;
+  description: string;
+  /** WMO weather code (raw). */
+  code: number;
+}
+
+/**
+ * 7-day HOURLY forecast (Open-Meteo, free, no key). Future-valid signal:
+ * the only weather we can legitimately use for a week-ahead demand forecast.
+ */
+export async function getWeatherForecast(p: GeoPoint): Promise<SourceResult<WeatherHour[]>> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}` +
+    "&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m" +
+    "&wind_speed_unit=kmh&forecast_days=7&timezone=America%2FToronto";
+  try {
+    const raw = await cached(
+      `wxfc:${p.lat.toFixed(3)},${p.lon.toFixed(3)}`,
+      () =>
+        fetchJson<{
+          hourly: {
+            time: string[];
+            temperature_2m: number[];
+            precipitation: number[];
+            weather_code: number[];
+            wind_speed_10m: number[];
+          };
+        }>(url),
+      30 * 60 * 1000,
+    );
+    const h = raw.hourly;
+    const hours: WeatherHour[] = h.time.map((t, i) => ({
+      time: t,
+      temperatureC: Math.round(h.temperature_2m[i]),
+      precipitationMm: h.precipitation[i] ?? 0,
+      windKph: Math.round(h.wind_speed_10m[i] ?? 0),
+      description: WMO[h.weather_code[i]] ?? "Unknown",
+      code: h.weather_code[i] ?? 0,
+    }));
+    return {
+      source: "weather-forecast",
+      status: "live",
+      fetchedAt: nowIso(),
+      attribution: "Open-Meteo",
+      data: hours,
+    };
+  } catch (err) {
+    return {
+      source: "weather-forecast",
+      status: "demo",
+      fetchedAt: nowIso(),
+      note: err instanceof Error ? err.message : "error",
+      data: [],
+    };
+  }
+}
+
 export async function getAirQuality(p: GeoPoint): Promise<SourceResult<AirQualityNow>> {
   const url =
     `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${p.lat}&longitude=${p.lon}` +

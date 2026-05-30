@@ -9,7 +9,12 @@ import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
 import { computeFlow } from "./sources/neighbourhoods.ts";
 import { getTraffic } from "./sources/traffic.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
-import { forecastForBusiness, forecastForPoint } from "./ai/forecast.ts";
+import {
+  forecastForBusiness,
+  forecastForPoint,
+  weekForecastForBusiness,
+  weekForecastForPoint,
+} from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
 import { activeProvider } from "./ai/provider.ts";
@@ -155,6 +160,27 @@ app.get("/api/forecast", async (c) => {
     );
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "forecast error" }, 500);
+  }
+});
+
+// ---- Week-ahead demand forecast (7 days / 168h, structural heuristic) ----
+app.get("/api/forecast/week", async (c) => {
+  const businessId = c.req.query("businessId");
+  const radiusM = Number(c.req.query("radius") ?? 750);
+  try {
+    if (businessId) {
+      return c.json(await weekForecastForBusiness(businessId, radiusM));
+    }
+    const lon = Number(c.req.query("lon"));
+    const lat = Number(c.req.query("lat"));
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+      return c.json({ error: "provide businessId or lon+lat" }, 400);
+    }
+    return c.json(
+      await weekForecastForPoint(lon, lat, { radiusM, businessType: c.req.query("type") ?? undefined }),
+    );
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "week forecast error" }, 500);
   }
 });
 

@@ -6,7 +6,7 @@ import { BusinessSetup } from "./components/BusinessSetup";
 import { AgentChat } from "./components/AgentChat";
 import { Panel } from "./components/Panel";
 import { DashboardGrid, resetDashboardLayout, type GridTile } from "./components/DashboardGrid";
-import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type LocationContext } from "./services/api";
+import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type LocationContext, type WeeklyForecast } from "./services/api";
 
 const FORECAST_COLOR: Record<DemandLevel, string> = {
   low: "#5a8dd6",
@@ -61,6 +61,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(localStorage.getItem(LS_KEY));
   const [context, setContext] = useState<LocationContext | null>(null);
   const [forecast, setForecast] = useState<DemandForecast | null>(null);
+  const [week, setWeek] = useState<WeeklyForecast | null>(null);
   const [flow, setFlow] = useState<FlowCollection | null>(null);
   const [provider, setProvider] = useState<string>("…");
   const [showSetup, setShowSetup] = useState(false);
@@ -83,6 +84,7 @@ export function App() {
     if (selectedId) localStorage.setItem(LS_KEY, selectedId);
     setContext(null);
     setForecast(null);
+    setWeek(null);
     api
       .context(selectedId ? { businessId: selectedId } : { radius: 1000 })
       .then(setContext)
@@ -90,6 +92,10 @@ export function App() {
     api
       .forecast(selectedId ? { businessId: selectedId } : { radius: 1000 })
       .then(setForecast)
+      .catch(() => {});
+    api
+      .forecastWeek(selectedId ? { businessId: selectedId } : { radius: 1000 })
+      .then(setWeek)
       .catch(() => {});
   }, [selectedId]);
 
@@ -103,6 +109,10 @@ export function App() {
       api
         .forecast(selectedId ? { businessId: selectedId } : { radius: 1000 })
         .then(setForecast)
+        .catch(() => {});
+      api
+        .forecastWeek(selectedId ? { businessId: selectedId } : { radius: 1000 })
+        .then(setWeek)
         .catch(() => {});
       api.flow().then(setFlow).catch(() => {});
     };
@@ -154,12 +164,12 @@ export function App() {
       x: 0,
       y: 5,
       w: 12,
-      h: 4,
+      h: 6,
       content: (
         <Panel
           title="Demand Forecast"
           status={forecast ? "live" : "loading"}
-          description="Next ~12h customer-demand outlook fusing events, flights, weather, transit, construction and time-of-day. Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
+          description="Next ~12h demand outlook plus a 7-day structural projection (forecasted weather, Ontario calendar/holidays, scheduled events, persistent transit/construction). Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
           updatedAt={forecast?.generatedAt}
           note={forecast ? `${forecast.method === "llm" ? "model-reasoned" : "heuristic"} · ${forecast.provider}/${forecast.model}` : undefined}
         >
@@ -183,6 +193,41 @@ export function App() {
                 <span class="muted">{Math.round(forecast.score * 100)}% pressure</span>
               </div>
               <p class="forecast-headline">{forecast.headline}</p>
+              {week && week.days.length > 0 && (
+                <div class="forecast-week">
+                  <div class="forecast-week-head">
+                    <span class="forecast-sub">7-day outlook</span>
+                    <span class="muted">
+                      {week.headline} · weather {week.weatherStatus}
+                    </span>
+                  </div>
+                  <div class="forecast-week-strip">
+                    {week.days.map((d) => (
+                      <div
+                        key={d.date}
+                        class={`forecast-day${d.isWeekend ? " is-weekend" : ""}`}
+                        title={`${d.dayName} ${d.date}\nPeak ${d.peakWindow} (${d.peakLevel})\n${d.note}`}
+                      >
+                        <div class="forecast-day-name">
+                          {d.dayName}
+                          {d.isHoliday && <span class="forecast-day-holiday" title={d.holidayName}>★</span>}
+                        </div>
+                        <span
+                          class="forecast-pill forecast-day-pill"
+                          style={{ background: FORECAST_COLOR[d.peakLevel], color: "#0b0f17" }}
+                        >
+                          {d.peakLevel}
+                        </span>
+                        <div class="forecast-day-peak">{d.peakWindow}</div>
+                        <div class="forecast-day-meta muted">
+                          {d.highTempC != null ? `${d.highTempC}°/${d.lowTempC}°` : "—"}
+                          {d.events > 0 && ` · ${d.events}ev`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div class="forecast-cols">
                 <div>
                   <div class="forecast-sub">Drivers</div>
@@ -227,7 +272,7 @@ export function App() {
     {
       id: "livetv",
       x: 0,
-      y: 9,
+      y: 11,
       w: 7,
       h: 6,
       content: (
@@ -243,7 +288,7 @@ export function App() {
     {
       id: "flow",
       x: 7,
-      y: 9,
+      y: 11,
       w: 5,
       h: 6,
       content: (
@@ -272,7 +317,7 @@ export function App() {
     {
       id: "events",
       x: 0,
-      y: 15,
+      y: 17,
       w: 6,
       h: 5,
       content: (
@@ -305,7 +350,7 @@ export function App() {
     {
       id: "sources",
       x: 6,
-      y: 15,
+      y: 17,
       w: 6,
       h: 5,
       content: (
@@ -334,7 +379,7 @@ export function App() {
     {
       id: "weather",
       x: 0,
-      y: 20,
+      y: 22,
       w: 3,
       h: 3,
       content: (
@@ -359,7 +404,7 @@ export function App() {
     {
       id: "airquality",
       x: 3,
-      y: 20,
+      y: 22,
       w: 3,
       h: 3,
       content: (
@@ -384,7 +429,7 @@ export function App() {
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
       x: (i % 3) * 4,
-      y: 23 + Math.floor(i / 3) * 4,
+      y: 25 + Math.floor(i / 3) * 4,
       w: 4,
       h: 4,
       content: (

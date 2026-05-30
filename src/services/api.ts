@@ -108,6 +108,43 @@ export interface DemandForecast {
   contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
 }
 
+export interface ForecastDay {
+  date: string;
+  dayName: string;
+  isWeekend: boolean;
+  isHoliday: boolean;
+  holidayName?: string;
+  peakScore: number;
+  peakLevel: DemandLevel;
+  peakWindow: string;
+  avgScore: number;
+  avgLevel: DemandLevel;
+  highTempC?: number;
+  lowTempC?: number;
+  weather?: string;
+  events: number;
+  drivers: ForecastDriver[];
+  note: string;
+}
+
+export interface WeeklyForecast {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  method: "heuristic";
+  horizonHours: number;
+  headline: string;
+  days: ForecastDay[];
+  weatherStatus: "live" | "demo" | "error";
+  basis: string;
+  contextUsed: {
+    name?: string;
+    businessType?: string;
+    radiusM: number;
+    structural: { construction: number; transit: number };
+  };
+}
+
 export interface LiveChannelSummary {
   id: string;
   name: string;
@@ -233,6 +270,16 @@ export const api = {
     if (params.radius != null) q.set("radius", String(params.radius));
     if (params.type) q.set("type", params.type);
     return fetch(`/api/forecast?${q.toString()}`).then(json<DemandForecast>);
+  },
+
+  forecastWeek: (params: { businessId?: string; lon?: number; lat?: number; radius?: number; type?: string }) => {
+    const q = new URLSearchParams();
+    if (params.businessId) q.set("businessId", params.businessId);
+    if (params.lon != null) q.set("lon", String(params.lon));
+    if (params.lat != null) q.set("lat", String(params.lat));
+    if (params.radius != null) q.set("radius", String(params.radius));
+    if (params.type) q.set("type", params.type);
+    return fetch(`/api/forecast/week?${q.toString()}`).then(json<WeeklyForecast>);
   },
 
   mapRecords: () =>

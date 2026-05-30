@@ -2572,3 +2572,55 @@ body.lp-visible #particle-canvas {
 @media (max-width: 760px) {
   .forecast-cols { grid-template-columns: 1fr; }
 }
+
+/* ---- Week-ahead strip ---- */
+.forecast-week {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+.forecast-week-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.forecast-week-head .muted { font-size: 11px; }
+.forecast-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+.forecast-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: var(--border-light);
+  text-align: center;
+}
+.forecast-day.is-weekend { background: rgba(88, 166, 255, 0.1); }
+.forecast-day-name {
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.forecast-day-holiday { color: #d29922; font-size: 10px; }
+.forecast-day-pill {
+  font-size: 9px;
+  padding: 2px 7px;
+  text-transform: capitalize;
+}
+.forecast-day-peak { font-size: 11px; font-weight: 600; }
+.forecast-day-meta { font-size: 10px; }
+@media (max-width: 760px) {
+  .forecast-week-strip { grid-template-columns: repeat(4, 1fr); }
+}
