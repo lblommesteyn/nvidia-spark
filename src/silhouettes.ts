@@ -72,4 +72,49 @@ export const scenes: SceneDefinition[] = [
       <path d="M700 320 L713 288 L726 320 Z"/>
     `),
   },
+  {
+    id: "streetcar",
+    label: "TTC Flexity streetcar",
+    color: [1, 0.24, 0.28],
+    palette: [[1, 0.24, 0.28], [1, 0.7, 0.34], [0.82, 0.92, 1]],
+    depth: 0.5,
+    svg: svgFrame(`
+      <rect x="130" y="210" width="740" height="228" rx="48"/>
+      <path d="M154 246 C215 186 785 186 846 246" fill="none" stroke-width="34"/>
+      <rect x="190" y="252" width="132" height="74" rx="14" fill="black" stroke="none"/>
+      <rect x="356" y="252" width="122" height="74" rx="14" fill="black" stroke="none"/>
+      <rect x="522" y="252" width="122" height="74" rx="14" fill="black" stroke="none"/>
+      <rect x="680" y="252" width="132" height="74" rx="14" fill="black" stroke="none"/>
+      <rect x="430" y="340" width="140" height="98" rx="12" fill="black" stroke="none"/>
+      <path d="M260 210 L330 120 L670 120 L740 210" fill="none" stroke-width="30"/>
+      <path d="M390 120 L500 66 L610 120" fill="none" stroke-width="18"/>
+      <path d="M158 392 L842 392" fill="none" stroke-width="30"/>
+      <circle cx="282" cy="444" r="48"/>
+      <circle cx="718" cy="444" r="48"/>
+      <rect x="214" y="352" width="92" height="28" rx="8" fill="black" stroke="none"/>
+      <rect x="696" y="352" width="92" height="28" rx="8" fill="black" stroke="none"/>
+    `),
+  },
+  {
+    id: "demand-chart",
+    label: "Demand curve and candlesticks",
+    color: [1, 0.72, 0.25],
+    palette: [[1, 0.72, 0.25], [0.49, 1, 0.75], [0.35, 0.73, 1]],
+    depth: 0.68,
+    svg: svgFrame(`
+      <path d="M140 470 L865 470" fill="none" stroke-width="24"/>
+      <path d="M140 470 L140 118" fill="none" stroke-width="24"/>
+      <path d="M185 426 C270 392 332 410 415 340 C500 270 576 300 660 210 C724 142 792 126 860 96" fill="none" stroke-width="40"/>
+      <path d="M796 101 L860 96 L832 154 Z"/>
+      <circle cx="185" cy="426" r="24"/>
+      <circle cx="415" cy="340" r="28"/>
+      <circle cx="660" cy="210" r="28"/>
+      <path d="M254 385 L254 458" fill="none" stroke-width="16"/>
+      <rect x="232" y="404" width="44" height="34" rx="4"/>
+      <path d="M574 238 L574 458" fill="none" stroke-width="16"/>
+      <rect x="552" y="262" width="44" height="142" rx="4"/>
+      <path d="M696 160 L696 458" fill="none" stroke-width="16"/>
+      <rect x="674" y="190" width="44" height="196" rx="4"/>
+    `),
+  },
 ];
