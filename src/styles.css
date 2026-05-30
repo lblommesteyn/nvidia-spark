@@ -779,3 +779,38 @@ body {
 
 /* MapLibre control tweaks to fit the dark theme */
 .maplibregl-ctrl-attrib { font-size: 9px !important; }
+
+/* ---- Demand forecast tile ---- */
+.forecast { display: flex; flex-direction: column; gap: 10px; }
+.forecast-head { display: flex; align-items: center; gap: 10px; }
+.forecast-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.forecast-gauge {
+  flex: 1;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--border-light);
+  overflow: hidden;
+}
+.forecast-gauge-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.forecast-headline { margin: 0; font-size: 13px; font-weight: 600; }
+.forecast-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.forecast-sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+@media (max-width: 760px) {
+  .forecast-cols { grid-template-columns: 1fr; }
+}

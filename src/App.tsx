@@ -6,7 +6,14 @@ import { BusinessSetup } from "./components/BusinessSetup";
 import { AgentChat } from "./components/AgentChat";
 import { Panel } from "./components/Panel";
 import { DashboardGrid, resetDashboardLayout, type GridTile } from "./components/DashboardGrid";
-import { api, type Business, type CivicRecord, type FlowCollection, type LocationContext } from "./services/api";
+import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type LocationContext } from "./services/api";
+
+const FORECAST_COLOR: Record<DemandLevel, string> = {
+  low: "#5a8dd6",
+  moderate: "#3fb950",
+  elevated: "#d29922",
+  surge: "#f85149",
+};
 
 const LS_KEY = "tomon-business-id";
 
@@ -53,6 +60,7 @@ export function App() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(localStorage.getItem(LS_KEY));
   const [context, setContext] = useState<LocationContext | null>(null);
+  const [forecast, setForecast] = useState<DemandForecast | null>(null);
   const [flow, setFlow] = useState<FlowCollection | null>(null);
   const [provider, setProvider] = useState<string>("…");
   const [showSetup, setShowSetup] = useState(false);
@@ -74,9 +82,14 @@ export function App() {
   useEffect(() => {
     if (selectedId) localStorage.setItem(LS_KEY, selectedId);
     setContext(null);
+    setForecast(null);
     api
       .context(selectedId ? { businessId: selectedId } : { radius: 1000 })
       .then(setContext)
+      .catch(() => {});
+    api
+      .forecast(selectedId ? { businessId: selectedId } : { radius: 1000 })
+      .then(setForecast)
       .catch(() => {});
   }, [selectedId]);
 
@@ -86,6 +99,10 @@ export function App() {
       api
         .context(selectedId ? { businessId: selectedId } : { radius: 1000 })
         .then(setContext)
+        .catch(() => {});
+      api
+        .forecast(selectedId ? { businessId: selectedId } : { radius: 1000 })
+        .then(setForecast)
         .catch(() => {});
       api.flow().then(setFlow).catch(() => {});
     };
@@ -133,9 +150,84 @@ export function App() {
       ),
     },
     {
-      id: "livetv",
+      id: "forecast",
       x: 0,
       y: 5,
+      w: 12,
+      h: 4,
+      content: (
+        <Panel
+          title="Demand Forecast"
+          status={forecast ? "live" : "loading"}
+          description="Next ~12h customer-demand outlook fusing events, flights, weather, transit, construction and time-of-day. Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
+          updatedAt={forecast?.generatedAt}
+          note={forecast ? `${forecast.method === "llm" ? "model-reasoned" : "heuristic"} · ${forecast.provider}/${forecast.model}` : undefined}
+        >
+          {!forecast ? (
+            <div class="muted">Computing forecast…</div>
+          ) : (
+            <div class="forecast">
+              <div class="forecast-head">
+                <span
+                  class="forecast-pill"
+                  style={{ background: FORECAST_COLOR[forecast.level], color: "#0b0f17" }}
+                >
+                  {forecast.level.toUpperCase()}
+                </span>
+                <div class="forecast-gauge">
+                  <div
+                    class="forecast-gauge-fill"
+                    style={{ width: `${Math.round(forecast.score * 100)}%`, background: FORECAST_COLOR[forecast.level] }}
+                  />
+                </div>
+                <span class="muted">{Math.round(forecast.score * 100)}% pressure</span>
+              </div>
+              <p class="forecast-headline">{forecast.headline}</p>
+              <div class="forecast-cols">
+                <div>
+                  <div class="forecast-sub">Drivers</div>
+                  <ul class="list">
+                    {forecast.drivers.slice(0, 5).map((d, i) => (
+                      <li key={i}>
+                        <span style={{ color: d.impact === "up" ? "#3fb950" : "#f85149" }}>
+                          {d.impact === "up" ? "▲" : "▼"}
+                        </span>{" "}
+                        <strong>{d.signal}</strong>
+                        <span class="muted"> — {d.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div class="forecast-sub">Windows</div>
+                  <ul class="list">
+                    {forecast.windows.map((w, i) => (
+                      <li key={i}>
+                        <span class="flow-dot" style={{ background: FORECAST_COLOR[w.level] }} />
+                        <strong>{w.label}</strong>
+                        <span class="muted"> — {w.note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div class="forecast-sub">Recommended actions</div>
+                  <ul class="list">
+                    {forecast.actions.map((a, i) => (
+                      <li key={i}><span class="muted">{a}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </Panel>
+      ),
+    },
+    {
+      id: "livetv",
+      x: 0,
+      y: 9,
       w: 7,
       h: 6,
       content: (
@@ -151,7 +243,7 @@ export function App() {
     {
       id: "flow",
       x: 7,
-      y: 5,
+      y: 9,
       w: 5,
       h: 6,
       content: (
@@ -180,7 +272,7 @@ export function App() {
     {
       id: "events",
       x: 0,
-      y: 11,
+      y: 15,
       w: 6,
       h: 5,
       content: (
@@ -213,7 +305,7 @@ export function App() {
     {
       id: "sources",
       x: 6,
-      y: 11,
+      y: 15,
       w: 6,
       h: 5,
       content: (
@@ -242,7 +334,7 @@ export function App() {
     {
       id: "weather",
       x: 0,
-      y: 16,
+      y: 20,
       w: 3,
       h: 3,
       content: (
@@ -267,7 +359,7 @@ export function App() {
     {
       id: "airquality",
       x: 3,
-      y: 16,
+      y: 20,
       w: 3,
       h: 3,
       content: (
@@ -292,7 +384,7 @@ export function App() {
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
       x: (i % 3) * 4,
-      y: 19 + Math.floor(i / 3) * 4,
+      y: 23 + Math.floor(i / 3) * 4,
       w: 4,
       h: 4,
       content: (

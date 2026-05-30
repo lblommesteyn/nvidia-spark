@@ -9,6 +9,7 @@ import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
 import { computeFlow } from "./sources/neighbourhoods.ts";
 import { getTraffic } from "./sources/traffic.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
+import { forecastForBusiness, forecastForPoint } from "./ai/forecast.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
 import { activeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
@@ -133,6 +134,27 @@ app.get("/api/context", async (c) => {
   return c.json(
     await buildContext({ point: p, radiusM, businessType: c.req.query("type") ?? undefined }),
   );
+});
+
+// ---- Demand forecast (heuristic baseline + LLM/Nemotron reasoning) ----
+app.get("/api/forecast", async (c) => {
+  const businessId = c.req.query("businessId");
+  const radiusM = Number(c.req.query("radius") ?? 750);
+  try {
+    if (businessId) {
+      return c.json(await forecastForBusiness(businessId, radiusM));
+    }
+    const lon = Number(c.req.query("lon"));
+    const lat = Number(c.req.query("lat"));
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+      return c.json({ error: "provide businessId or lon+lat" }, 400);
+    }
+    return c.json(
+      await forecastForPoint(lon, lat, { radiusM, businessType: c.req.query("type") ?? undefined }),
+    );
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "forecast error" }, 500);
+  }
 });
 
 // ---- Businesses CRUD ----

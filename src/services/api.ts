@@ -78,6 +78,36 @@ export interface AgentAnswer {
   contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
 }
 
+export type DemandLevel = "low" | "moderate" | "elevated" | "surge";
+
+export interface ForecastDriver {
+  signal: string;
+  impact: "up" | "down";
+  detail: string;
+}
+
+export interface ForecastWindow {
+  label: string;
+  level: DemandLevel;
+  note: string;
+}
+
+export interface DemandForecast {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  method: "heuristic" | "llm";
+  horizonHours: number;
+  level: DemandLevel;
+  score: number;
+  headline: string;
+  drivers: ForecastDriver[];
+  windows: ForecastWindow[];
+  actions: string[];
+  reasoning?: string;
+  contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
+}
+
 export interface LiveChannelSummary {
   id: string;
   name: string;
@@ -193,6 +223,16 @@ export const api = {
     if (params.lat != null) q.set("lat", String(params.lat));
     if (params.radius != null) q.set("radius", String(params.radius));
     return fetch(`/api/context?${q.toString()}`).then(json<LocationContext>);
+  },
+
+  forecast: (params: { businessId?: string; lon?: number; lat?: number; radius?: number; type?: string }) => {
+    const q = new URLSearchParams();
+    if (params.businessId) q.set("businessId", params.businessId);
+    if (params.lon != null) q.set("lon", String(params.lon));
+    if (params.lat != null) q.set("lat", String(params.lat));
+    if (params.radius != null) q.set("radius", String(params.radius));
+    if (params.type) q.set("type", params.type);
+    return fetch(`/api/forecast?${q.toString()}`).then(json<DemandForecast>);
   },
 
   mapRecords: () =>
