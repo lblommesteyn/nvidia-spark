@@ -16,7 +16,30 @@ provider-agnostic LLM agent.
 - **DB:** SQLite (better-sqlite3) for business profiles
 - **Geocoding:** OpenStreetMap Nominatim (free, no key, Toronto-bounded)
 - **Data:** City of Toronto Open Data (CKAN) + Open-Meteo (weather/air quality)
-- **LLM:** provider-agnostic (OpenAI / Anthropic / Ollama / built-in mock)
+- **LLM:** provider-agnostic (NVIDIA Nemotron / OpenAI / Anthropic / Ollama / built-in mock)
+
+## Toronto City Brain — on-device Nemotron (GX10)
+
+The dashboard's agent **and** its **Demand Forecast** tile run against a
+provider-agnostic LLM layer that prefers a local **NVIDIA Nemotron NIM**
+(OpenAI-compatible). Point it at a Nemotron model served on an **ASUS GX10**
+(GB10 Grace-Blackwell, 128 GB) and all reasoning happens on-device, no cloud
+round-trip:
+
+```bash
+# .env
+NEMOTRON_BASE_URL=http://localhost:8000/v1
+NEMOTRON_MODEL=nvidia/llama-3.3-nemotron-super-49b-v1
+```
+
+- **Demand Forecast** (`GET /api/forecast`) — a next-~12h customer-demand outlook
+  fusing events, YYZ flights, weather, transit, construction and time-of-day. It
+  always works: a deterministic heuristic supplies a grounded baseline, and when
+  a Nemotron NIM is active the model reasons over the same signals and returns
+  strict JSON (heuristic fallback on any parse failure).
+- **LoRA fine-tuning** — `npm run gen:dataset` distills Toronto context snapshots
+  into JSONL training rows (teacher = Super-49B when a NIM is up, heuristic
+  otherwise). Full deploy + fine-tune runbook in **[docs/GX10-NEMOTRON.md](docs/GX10-NEMOTRON.md)**.
 
 ## Run
 
@@ -38,8 +61,9 @@ npm run typecheck    # frontend + server
 ## Enabling a real agent
 
 No key needed to demo — the agent falls back to a grounded, rule-based responder.
-To enable a conversational LLM, copy `.env.example` to `.env` and set ONE key
-(`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `OLLAMA_HOST`). No code changes.
+To enable a conversational LLM, copy `.env.example` to `.env` and set ONE provider
+(`NEMOTRON_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `OLLAMA_HOST`).
+Provider priority: **Nemotron → OpenAI → Anthropic → Ollama → mock**. No code changes.
 
 ## Data sources
 
@@ -85,6 +109,8 @@ The backend self-describes for external agents / MCP bridges:
 
 - `GET /api/manifest` and `GET /.well-known/ai-plugin.json` — tools + endpoints
 - `GET /api/context?businessId=…` (or `?lon=&lat=&radius=`) — location-scoped digest
+- `GET /api/forecast?businessId=…` (or `?lon=&lat=&radius=`) — next-~12h demand forecast
+- `GET /api/forecast/dataset?n=…` — sample LoRA training rows (add `&jsonl=1` for raw JSONL)
 - `POST /api/agent` `{ question, businessId | lon+lat, radiusM }` — grounded answer
 - `GET /api/data/map` — all geolocated civic records
 - `GET /api/data/source/:key` — one source (live/demo envelope)
@@ -106,8 +132,14 @@ server/
     environment.ts    # Open-Meteo weather + air quality
   ai/
     context.ts        # buildContext() — scoped, machine-readable digest
-    provider.ts       # provider-agnostic chat (openai/anthropic/ollama/mock)
+    provider.ts       # provider-agnostic chat (nemotron/openai/anthropic/ollama/mock)
     agent.ts          # grounds the LLM in location context
+    forecast.ts       # demand forecast (heuristic baseline + LLM/Nemotron reasoning)
+    dataset.ts        # context snapshots → LoRA fine-tuning JSONL (distillation)
+scripts/
+  gen-forecast-dataset.ts  # `npm run gen:dataset` — writes training JSONL
+docs/
+  GX10-NEMOTRON.md    # serve Nemotron NIM + LoRA fine-tune runbook
 src/
   services/api.ts     # typed backend client
   components/
