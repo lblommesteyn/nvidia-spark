@@ -113,6 +113,34 @@ export function mountTorontoMap(container: HTMLElement, zoom = 13) {
     radiusElement.style.width = `${radius * 2}px`;
     radiusElement.style.height = `${radius * 2}px`;
     container.appendChild(radiusElement);
+
+    const businessMarker = document.createElement("span");
+    businessMarker.className = "map-business";
+    businessMarker.style.left = `${businessPosition.x}px`;
+    businessMarker.style.top = `${businessPosition.y}px`;
+    businessMarker.innerHTML = `<span class="map-tooltip"><strong>${business.label}</strong>${business.detail}</span>`;
+    container.appendChild(businessMarker);
+
+    signals.forEach((marker) => {
+      const { x, y } = markerPosition(marker.lat, marker.lng, zoom, centerX, centerY, width, height);
+      const element = document.createElement("span");
+      element.className = `map-signal map-signal--${marker.type}`;
+      element.style.left = `${x}px`;
+      element.style.top = `${y}px`;
+      element.style.setProperty("--impact", marker.impact.toString());
+      element.innerHTML = `<span class="map-tooltip"><strong>${marker.label}</strong>${marker.detail}</span>`;
+      container.appendChild(element);
+    });
+
+    const attribution = document.createElement("span");
+    attribution.className = "osm-attribution";
+    attribution.textContent = "© OpenStreetMap © CARTO";
+    container.appendChild(attribution);
+  };
+
   render();
-  return () => {};
+
+  const observer = new ResizeObserver(render);
+  observer.observe(container);
+  return () => observer.disconnect();
 }
