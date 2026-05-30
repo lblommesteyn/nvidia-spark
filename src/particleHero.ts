@@ -144,5 +144,90 @@ const pickColor = (scene: SceneDefinition, rng: () => number) => {
   ] as [number, number, number];
 };
 
+async function sampleScene(scene: SceneDefinition, count: number, seed: number): Promise<SceneCloud> {
+  const image = await loadSvgImage(scene.svg);
+  const canvas = document.createElement("canvas");
+  canvas.width = rasterWidth;
+  canvas.height = rasterHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+
+  if (!context) {
+    throw new Error("Canvas 2D context unavailable");
+  }
+
+  context.clearRect(0, 0, rasterWidth, rasterHeight);
+  context.drawImage(image, 0, 0, rasterWidth, rasterHeight);
+
+  const pixels = context.getImageData(0, 0, rasterWidth, rasterHeight).data;
+  const opaque: Array<[number, number]> = [];
+  let minX = rasterWidth;
+  let minY = rasterHeight;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let y = 0; y < rasterHeight; y += 2) {
+    for (let x = 0; x < rasterWidth; x += 2) {
+      const alpha = pixels[(y * rasterWidth + x) * 4 + 3];
+      if (alpha > 24) {
+        opaque.push([x, y]);
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (!opaque.length) {
+    throw new Error(`No pixels found for scene ${scene.id}`);
+  }
+
+  const rng = mulberry32(seed);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const maxSide = Math.max(maxX - minX, maxY - minY);
+  const scale = 8.2;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i += 1) {
+    const [x, y] = opaque[Math.floor(rng() * opaque.length)];
+    const jitterX = (rng() - 0.5) * 0.9;
+    const jitterY = (rng() - 0.5) * 0.9;
+    positions[i * 3] = ((x + jitterX - centerX) / maxSide) * scale;
+    positions[i * 3 + 1] = -((y + jitterY - centerY) / maxSide) * scale;
+    positions[i * 3 + 2] = (rng() - 0.5) * scene.depth;
+
+    const color = pickColor(scene, rng);
+    colors[i * 3] = color[0];
+    colors[i * 3 + 1] = color[1];
+    colors[i * 3 + 2] = color[2];
+  }
+
+  return { positions, colors };
+}
+
+function makeRandomAttributes(count: number) {
+  const rng = mulberry32(92821);
+  const dirs = new Float32Array(count * 3);
+  const seeds = new Float32Array(count);
+
+  for (let i = 0; i < count; i += 1) {
+    let x = rng() * 2 - 1;
+    let y = rng() * 2 - 1;
+    let z = rng() * 2 - 1;
+    const length = Math.hypot(x, y, z) || 1;
+    x /= length;
+    y /= length;
+    z /= length;
+    dirs[i * 3] = x;
+    dirs[i * 3 + 1] = y;
+    dirs[i * 3 + 2] = z;
+    seeds[i] = rng();
+  }
+
+  return { dirs, seeds };
+}
+
 
 export async function mountParticleHero(_o: ParticleHeroOptions){return()=>{};}
