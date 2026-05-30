@@ -126,6 +126,58 @@ This writes:
 > Add events/transit history later for richer features; weather + calendar
 > already capture most of the bike‑share demand variance.
 
+### 2a+. Location-aware pipeline (recommended — "busy for THIS spot")
+
+`scripts/backfill_dataset.py` (§2a) labels the **whole city** by hour. The
+location-aware pipeline goes further: it learns demand **per place**, so the
+student can answer "is it busy *here*, right now?" — which is what a business
+owner actually asks. Four scripts, real‑first with every synthetic field tagged:
+
+| Script | Output | Source |
+|---|---|---|
+| `fetch_stations.py` | `data/stations.json` (1,035 stations) | GBFS `station_information` (real, no key) |
+| `enrich_places.py` | `data/places-cache.json` (105 enriched) | **Google Places API (New) v1** `places:searchNearby` — ratings, review counts, food/retail/nightlife mix, price level, commercial gravity. Resumable cache w/ 429 backoff. |
+| `venues_concerts.py` | `data/venues.json` (12), `data/concerts-2024.jsonl` | 12 **real** Toronto venues (real coords/capacity); 2024 concert calendar synthesized + tagged `synthetic:true` (no free historical setlist API). |
+| `backfill_location.py` | `data/demand-loc-2024.jsonl`, `data/forecast-loc-{train,val}.jsonl` | joins all of the above |
+
+`backfill_location.py` joins, per station-hour:
+- **Label** — Bike Share 2024 ridership aggregated to per‑station hourly counts,
+  normalized against **each station's own p95** so the level means "busy for
+  this location," not city‑wide. (89 of 105 enriched stations had ridership.)
+- **Static area profile** — Google Places features (affluence via `priceLevel`,
+  density via `commercialGravity`, category mix).
+- **Dynamic features** — Open‑Meteo historical hourly weather (one city‑wide
+  archive call, reused), Ontario holidays (computed via Easter/computus),
+  time‑of‑day / day‑of‑week / season, and **nearby concerts** (attendance within
+  radius from the venue calendar).
+
+Run order (needs `GOOGLE_PLACES_API_KEY` in `.env` for the enrich step):
+
+```bash
+python3 scripts/fetch_stations.py                       # → data/stations.json
+python3 scripts/enrich_places.py                        # → data/places-cache.json (resumable)
+python3 scripts/venues_concerts.py                      # → data/venues.json + concerts-2024.jsonl
+python3 scripts/backfill_location.py --csv /tmp/bikeshare-ridership-2024.csv --year 2024
+```
+
+Produces (current run):
+- `data/demand-loc-2024.jsonl` — 388,537 tabular station‑hour rows with full
+  provenance tags (real sources + `synthetic:["events"]`).
+- `data/forecast-loc-train.jsonl` — **183,873** instruction rows (signals→forecast
+  JSON), the canonical LoRA train set for §3.
+- `data/forecast-loc-val.jsonl` — 20,204 held‑out rows.
+
+Levels are class‑balanced (low capped): low 60k / moderate 67k / surge 45k /
+elevated 32k — fixing the prior 62%‑`low` skew. Each row's signal digest carries
+the `location` profile + nearby `events`, so the same instruction schema as §2a
+still applies — just richer features. Point §3 at
+`data/forecast-loc-train.jsonl` / `forecast-loc-val.jsonl`.
+
+> **Quotas.** Google Places (New) hard‑rate‑limits (HTTP 429) after ~105 rapid
+> `searchNearby` calls on this project; the top‑105 stations by capacity were
+> enriched (sufficient coverage). The cache is resumable — expand later with
+> slower pacing. Future adds: real census demographics, 2023/2025 ridership.
+
 ### 2b. Live distillation (augment / narrative layer)
 
 - `server/ai/dataset.ts` — builds `{messages|prompt, completion}` rows from a
@@ -177,8 +229,8 @@ docker run --rm -it --gpus all \
   nvcr.io/nvidia/nemo:24.07 \
   python -m nemo.collections.llm.peft.lora \
     --model nvidia/llama-3.1-nemotron-nano-8b-v1 \
-    --train_ds /data/forecast-train.jsonl \
-    --valid_ds /data/forecast-val.jsonl \
+    --train_ds /data/forecast-loc-train.jsonl \
+    --valid_ds /data/forecast-loc-val.jsonl \
     --scheme lora --lora_dim 16 --lora_alpha 32 \
     --lr 1e-4 --global_batch_size 32 --max_steps 400 \
     --save_path /out/toronto-forecaster-lora
