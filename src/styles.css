@@ -392,3 +392,125 @@ body.terminal-open {
   );
   opacity: 0.25;
 }
+
+.story-ribbon {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.story-ribbon p {
+  position: absolute;
+  left: clamp(22px, 4.8vw, 82px);
+  right: clamp(22px, 4.8vw, 82px);
+  margin: 0;
+  color: rgba(232, 255, 245, 0.14);
+  font-size: clamp(40px, 8.8vw, 126px);
+  font-weight: 600;
+  line-height: 0.9;
+  opacity: 0;
+  text-wrap: balance;
+  transform: translate3d(5vw, 34px, 0) skewX(var(--cursor-skew));
+  filter: blur(18px);
+  transition:
+    opacity 620ms ease,
+    transform 780ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 780ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.story-ribbon p:nth-child(1) {
+  top: 12%;
+  text-align: left;
+}
+
+.story-ribbon p:nth-child(2) {
+  top: 64%;
+  text-align: right;
+  transform: translate3d(-5vw, 34px, 0) skewX(var(--cursor-skew));
+}
+
+.story-ribbon p:nth-child(3) {
+  top: 16%;
+  text-align: right;
+  transform: translate3d(-5vw, 34px, 0) skewX(var(--cursor-skew));
+}
+
+.story-ribbon p:nth-child(4) {
+  top: 58%;
+  text-align: left;
+}
+
+.story-ribbon p:nth-child(5) {
+  top: 14%;
+  text-align: center;
+}
+
+.story-ribbon p:nth-child(6) {
+  top: 62%;
+  text-align: right;
+  transform: translate3d(-5vw, 34px, 0) skewX(var(--cursor-skew));
+}
+
+.story-ribbon p:nth-child(7) {
+  top: 18%;
+  text-align: center;
+}
+
+.story-ribbon p.is-active {
+  opacity: 0.6;
+  transform: translate3d(0, 0, 0) skewX(var(--cursor-skew));
+  filter: blur(0);
+}
+
+.scene-copy {
+  text-shadow: 0 6px 26px rgba(0, 0, 0, 0.86);
+}
+
+.scene-copy mark {
+  color: #f4fff8;
+  background:
+    linear-gradient(90deg, rgba(126, 255, 194, 0.08), rgba(68, 168, 255, 0.1)) 0 78% / 100% 0.42em no-repeat,
+    linear-gradient(90deg, rgba(126, 255, 194, 0.8), rgba(255, 185, 64, 0.74)) 0 84% / 0 0.18em no-repeat;
+  transition: background-size 780ms ease 220ms;
+}
+
+.story-ribbon mark {
+  color: rgba(244, 255, 248, 0.62);
+  background:
+    linear-gradient(90deg, rgba(126, 255, 194, 0.05), rgba(68, 168, 255, 0.06)) 0 78% / 100% 0.42em no-repeat,
+    linear-gradient(90deg, rgba(126, 255, 194, 0.48), rgba(255, 185, 64, 0.38)) 0 84% / 0 0.18em no-repeat;
+  transition: background-size 780ms ease 220ms;
+}
+
+.story-ribbon p.is-active mark,
+.scene-copy.is-active mark {
+  background-size:
+    100% 0.42em,
+    100% 0.18em;
+}
+
+.scene-copy {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  z-index: 4;
+  width: min(1040px, calc(100vw - 64px));
+  opacity: 0;
+  pointer-events: none;
+  text-align: center;
+  transform: translate(-50%, -42%) scale(0.94);
+  transition:
+    opacity 620ms ease,
+    transform 760ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 760ms cubic-bezier(0.16, 1, 0.3, 1);
+  filter: blur(18px);
+}
+
+.scene-copy.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+  filter: blur(0);
+}
