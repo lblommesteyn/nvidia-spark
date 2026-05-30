@@ -79,6 +79,49 @@ body.terminal-open {
   overflow: hidden;
 }
 
+/* ---- /app route: full-screen dashboard, landing hidden ---- */
+body.route-app {
+  overflow: hidden;
+}
+body.route-app #boot,
+body.route-app #app {
+  display: none !important;
+}
+body.route-app .terminal-app {
+  /* keep the fixed full-viewport container, but always visible (no modal) */
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+body.route-app .terminal-app-shell {
+  /* let the dashboard scroll if its content exceeds the viewport */
+  overflow: auto;
+}
+.app-home-link {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 200;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #cfe9dd;
+  text-decoration: none;
+  background: rgba(7, 13, 11, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  transition: background 140ms ease, color 140ms ease;
+}
+.app-home-link:hover {
+  background: rgba(7, 13, 11, 0.96);
+  color: #7effc2;
+}
+/* The home link only belongs to the dashboard route. */
+body:not(.route-app) .app-home-link {
+  display: none;
+}
+
 .landing-intro {
   position: relative;
   min-height: 94svh;

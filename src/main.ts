@@ -7,6 +7,12 @@ import "./styles.css";
 
 gsap.registerPlugin(ScrollTrigger);
 
+// Real routing: this marketing/landing experience only runs on "/". The /app
+// route is handled by main.tsx (the Preact dashboard); skip all landing setup
+// there so Lenis, the particle hero and scroll triggers never touch the app.
+const isAppRoute = window.location.pathname.replace(/\/+$/, "") === "/app";
+
+function initLanding() {
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const cleanups: Array<() => void> = [];
 
@@ -54,13 +60,8 @@ const closeTerminalButtons = document.querySelectorAll<HTMLButtonElement>("[data
 const beginStoryLinks = document.querySelectorAll<HTMLElement>("[data-begin-story]");
 
 const openTerminal = () => {
-  if (!terminalApp) {
-    return;
-  }
-
-  terminalApp.setAttribute("aria-hidden", "false");
-  document.body.classList.add("terminal-open");
-  terminalApp.querySelector<HTMLButtonElement>("[data-close-terminal]")?.focus();
+  // Real routing: navigate to the dashboard route instead of opening a modal.
+  window.location.assign("/app");
 };
 
 const closeTerminal = () => {
@@ -169,3 +170,8 @@ void boot();
 window.addEventListener("beforeunload", () => {
   cleanups.forEach((cleanup) => cleanup());
 });
+}
+
+if (!isAppRoute) {
+  initLanding();
+}
