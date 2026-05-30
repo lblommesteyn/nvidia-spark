@@ -222,6 +222,9 @@ export interface GoTrainCollection {
   type: "FeatureCollection";
   status: "demo";
   fetchedAt: string;
+  dayType: "weekday" | "sat" | "sun";
+  serviceSecond: number;
+  activeTrains: number;
   note: string;
   attribution: string;
   features: {

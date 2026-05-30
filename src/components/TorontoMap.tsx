@@ -313,7 +313,7 @@ export function TorontoMap({ home }: Props) {
           source: "go-trains",
           paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 7, 15, 14],
-            "circle-color": "#0F7A3D",
+            "circle-color": ["get", "color"],
             "circle-opacity": 0.25,
             "circle-blur": 1,
           },
@@ -324,7 +324,7 @@ export function TorontoMap({ home }: Props) {
           source: "go-trains",
           paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 15, 6],
-            "circle-color": "#16a34a",
+            "circle-color": ["get", "color"],
             "circle-stroke-color": "#eafff1",
             "circle-stroke-width": 1.4,
             "circle-opacity": 0.95,

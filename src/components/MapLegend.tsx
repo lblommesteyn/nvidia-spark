@@ -20,7 +20,7 @@ export function MapLegend() {
       <span class="map-legend-item"><i style={{ background: "#00923F" }} />L2</span>
       <span class="map-legend-item"><i style={{ background: "#A21A68" }} />L4</span>
       <span class="map-legend-item"><i style={{ background: "#DA251D" }} />Streetcar</span>
-      <span class="map-legend-item"><i style={{ background: "#16a34a" }} />GO Train</span>
+      <span class="map-legend-item"><i style={{ background: "#98002e" }} />GO (by line)</span>
       <span class="map-legend-sep">flow:</span>
       <span class="map-legend-item"><i class="legend-grad" />low → intense</span>
     </div>

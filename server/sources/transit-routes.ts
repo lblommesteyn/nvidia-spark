@@ -13,6 +13,7 @@
 
 import type { SourceResult } from "../types.ts";
 import { nowIso } from "../cache.ts";
+import { goRoutes } from "./go-gtfs.ts";
 
 export type TransitMode = "subway" | "streetcar" | "go";
 
@@ -40,7 +41,6 @@ const L1 = "#F8C300"; // Yonge-University — yellow
 const L2 = "#00923F"; // Bloor-Danforth — green
 const L4 = "#A21A68"; // Sheppard — purple/magenta
 const STREETCAR = "#DA251D"; // TTC red
-const GO = "#0F7A3D"; // GO Transit green (rendered dashed to distinguish)
 
 function feature(
   id: string,
@@ -131,96 +131,40 @@ const SPADINA_510: [number, number][] = [
   [-79.3859, 43.6388], // Queens Quay (Spadina loop)
 ];
 
-// ---- GO Transit rail corridors (from Union) ------------------------------
+// ---- GO Transit rail corridors (real geometry from GO GTFS shapes) -------
 
-const GO_LAKESHORE_WEST: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.4163, 43.6343], // Exhibition
-  [-79.4977, 43.6157], // Mimico
-  [-79.5435, 43.5926], // Long Branch
-  [-79.586, 43.5547], // Port Credit
-  [-79.631, 43.5183], // Clarkson
-  [-79.6833, 43.4561], // Oakville
-];
+/**
+ * Build a route line per GO line from the GTFS-derived geometry. Uses the
+ * outbound ("0", Union → terminus) shape, falling back to inbound if absent.
+ */
+function goFeatures(): RouteFeature[] {
+  return goRoutes()
+    .map((r) => {
+      const coords = r.geometry["0"] ?? r.geometry["1"];
+      if (!coords || coords.length < 2) return null;
+      return feature(`go-${r.short.toLowerCase()}`, `GO ${r.name}`, r.name, "go", r.color, coords);
+    })
+    .filter((f): f is RouteFeature => f !== null);
+}
 
-const GO_LAKESHORE_EAST: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.2879, 43.6864], // Danforth
-  [-79.2614, 43.7148], // Eglinton
-  [-79.1956, 43.7551], // Guildwood
-  [-79.0857, 43.8336], // Pickering
-  [-79.0265, 43.852], // Ajax
-  [-78.8658, 43.892], // Oshawa
-];
+function buildFeatures(): RouteFeature[] {
+  return [
+    // GO first so subway/streetcar draw on top.
+    ...goFeatures(),
+    feature("ttc-501", "501 Queen", "501", "streetcar", STREETCAR, QUEEN_501),
+    feature("ttc-504", "504 King", "504", "streetcar", STREETCAR, KING_504),
+    feature("ttc-510", "510 Spadina", "510", "streetcar", STREETCAR, SPADINA_510),
+    feature("ttc-l1", "Line 1 Yonge-University", "1", "subway", L1, LINE1),
+    feature("ttc-l2", "Line 2 Bloor-Danforth", "2", "subway", L2, LINE2),
+    feature("ttc-l4", "Line 4 Sheppard", "4", "subway", L4, LINE4),
+  ];
+}
 
-const GO_KITCHENER: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.4636, 43.6618], // Bloor GO
-  [-79.517, 43.7], // Weston
-  [-79.5605, 43.7095], // Etobicoke North
-  [-79.628, 43.7065], // Malton
-  [-79.762, 43.6915], // Brampton
-  [-79.92, 43.652], // Georgetown
-];
-
-const GO_MILTON: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.536, 43.6365], // Kipling
-  [-79.578, 43.619], // Dixie
-  [-79.621, 43.579], // Cooksville
-  [-79.71, 43.555], // Streetsville
-  [-79.883, 43.523], // Milton
-];
-
-const GO_BARRIE: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.4663, 43.6817], // Caledonia
-  [-79.4781, 43.753], // Downsview Park
-  [-79.516, 43.8419], // Rutherford
-  [-79.4596, 43.9966], // Aurora
-  [-79.6903, 44.389], // Barrie South
-];
-
-const GO_RICHMOND_HILL: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.3779, 43.777], // Oriole
-  [-79.4079, 43.83], // Langstaff
-  [-79.425, 43.877], // Richmond Hill
-];
-
-const GO_STOUFFVILLE: [number, number][] = [
-  [-79.3806, 43.6452], // Union
-  [-79.2636, 43.7323], // Kennedy
-  [-79.2862, 43.7858], // Agincourt
-  [-79.311, 43.853], // Unionville
-  [-79.2643, 43.9035], // Markham
-  [-79.244, 43.971], // Stouffville
-];
-
-/** The GO corridors, exposed for the (mock) live train generator. */
-export const GO_LINES: { id: string; name: string; coordinates: [number, number][] }[] = [
-  { id: "go-lw", name: "Lakeshore West", coordinates: GO_LAKESHORE_WEST },
-  { id: "go-le", name: "Lakeshore East", coordinates: GO_LAKESHORE_EAST },
-  { id: "go-kit", name: "Kitchener", coordinates: GO_KITCHENER },
-  { id: "go-mil", name: "Milton", coordinates: GO_MILTON },
-  { id: "go-bar", name: "Barrie", coordinates: GO_BARRIE },
-  { id: "go-rh", name: "Richmond Hill", coordinates: GO_RICHMOND_HILL },
-  { id: "go-stf", name: "Stouffville", coordinates: GO_STOUFFVILLE },
-];
-
-const FEATURES: RouteFeature[] = [
-  // GO first so subway/streetcar draw on top.
-  ...GO_LINES.map((l) => feature(l.id, `GO ${l.name}`, l.name, "go", GO, l.coordinates)),
-  feature("ttc-501", "501 Queen", "501", "streetcar", STREETCAR, QUEEN_501),
-  feature("ttc-504", "504 King", "504", "streetcar", STREETCAR, KING_504),
-  feature("ttc-510", "510 Spadina", "510", "streetcar", STREETCAR, SPADINA_510),
-  feature("ttc-l1", "Line 1 Yonge-University", "1", "subway", L1, LINE1),
-  feature("ttc-l2", "Line 2 Bloor-Danforth", "2", "subway", L2, LINE2),
-  feature("ttc-l4", "Line 4 Sheppard", "4", "subway", L4, LINE4),
-];
+let featureCache: RouteFeature[] | null = null;
 
 export function getTransitRoutes(): RouteCollection {
-  return { type: "FeatureCollection", features: FEATURES };
+  if (!featureCache) featureCache = buildFeatures();
+  return { type: "FeatureCollection", features: featureCache };
 }
 
 export function loadTransitRoutes(): SourceResult<RouteCollection> {
@@ -229,6 +173,6 @@ export function loadTransitRoutes(): SourceResult<RouteCollection> {
     status: "live",
     fetchedAt: nowIso(),
     data: getTransitRoutes(),
-    attribution: "Curated TTC subway/streetcar + GO Transit corridor geometry",
+    attribution: "TTC subway/streetcar (curated) + GO Transit corridors (GO GTFS shapes)",
   };
 }
