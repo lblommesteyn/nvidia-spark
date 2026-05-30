@@ -244,8 +244,119 @@
             <strong>HARBOUR GRIND</strong>
             <p>Financial District cafe / weekday rush profile</p>
           </section>
+          <section class="terminal-command-card status-positive">
+            <span>72H Forecast</span>
+            <strong>+$3,032</strong>
+            <p>Above baseline revenue exposure</p>
+          </section>
+          <section class="terminal-command-card status-caution">
+            <span>Top driver</span>
+            <strong>EVENT SPIKE</strong>
+            <p>Scotiabank Arena demand window opens 4 PM</p>
+          </section>
+          <section class="terminal-command-card status-info">
+            <span>Next action</span>
+            <strong>INCREASE PREP 21%</strong>
+            <p>Send order to shift lead before 3:30 PM</p>
+          </section>
+        </div>
+        <div class="terminal-workspace">
+          <section class="terminal-map-panel">
+            <header><span>cityflow.map / harbour_grind_radius</span><span>DARK BASEMAP + SIGNAL OVERLAY</span></header>
+            <div class="real-map terminal-large-map" data-toronto-map="app-terminal" aria-label="OpenStreetMap view of Toronto operations radius"></div>
+          </section>
+          <div class="terminal-side-stack">
+            <section class="terminal-chart-panel" aria-labelledby="forecast-chart-title">
+              <header><span id="forecast-chart-title">demand_curve.forecast</span><span>BASELINE VS PREDICTED</span></header>
+              <svg class="forecast-chart" viewBox="0 0 640 280" role="img" aria-label="Forecast chart showing predicted demand rising above baseline after 4 PM">
+                <defs>
+                  <linearGradient id="confidence-band" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#7effc2" stop-opacity="0.26" />
+                    <stop offset="100%" stop-color="#44a8ff" stop-opacity="0.04" />
+                  </linearGradient>
+                  <linearGradient id="predicted-line" x1="0" x2="1" y1="0" y2="0">
+                    <stop offset="0%" stop-color="#7effc2" />
+                    <stop offset="64%" stop-color="#ffb940" />
+                    <stop offset="100%" stop-color="#44a8ff" />
+                  </linearGradient>
+                </defs>
+                <g class="chart-grid">
+                  <path d="M64 42H594M64 94H594M64 146H594M64 198H594M64 250H594" />
+                  <path d="M64 42V250M170 42V250M276 42V250M382 42V250M488 42V250M594 42V250" />
+                </g>
+                <path class="confidence-band" fill="url(#confidence-band)" d="M64 176C132 164 170 160 226 162C288 164 320 132 382 102C456 66 520 76 594 104L594 166C520 142 456 132 382 166C318 198 286 218 226 212C166 206 128 214 64 222Z" />
+                <path class="baseline-line" d="M64 184C136 178 196 174 250 178C320 184 368 188 424 180C480 172 532 166 594 170" />
+                <path class="predicted-line" stroke="url(#predicted-line)" d="M64 176C132 164 170 160 226 162C288 164 320 132 382 102C456 66 520 76 594 104" />
+                <g class="chart-event">
+                  <path d="M382 42V250" />
+                  <circle cx="382" cy="102" r="6" />
+                  <text x="394" y="88">4 PM event window</text>
+                </g>
+                <g class="chart-axis">
+                  <text x="64" y="272">now</text>
+                  <text x="276" y="272">24h</text>
+                  <text x="488" y="272">48h</text>
+                  <text x="564" y="272">72h</text>
+                </g>
+              </svg>
+              <div class="chart-legend">
+                <span class="legend-predicted">Predicted</span>
+                <span class="legend-baseline">Baseline</span>
+                <span class="legend-band">Confidence band</span>
+              </div>
+            </section>
+            <section class="terminal-console-panel">
+              <header><span>agent_trace.log</span><span>WORKING LOOP ACTIVE</span></header>
+              <pre><code>[12:04:11] observe  11 city signals normalized for Harbour Grind.
+[12:04:12] ground   mapped event centroid, Union delay, lane restriction, and weather to 1.8 km operating radius.
+[12:04:13] forecast predicted demand exceeds baseline from 4 PM to 10 PM; confidence widens after 48 hours.
+[12:04:14] decide   generated prep, staffing, delivery-promise, and pickup-offer actions.
+[12:04:15] verify   checked actions against cafe constraints: kitchen capacity, rush staffing, and spoilage limit.
 
-    </main>
+ACTION ORDER 01
+Increase prep by 21% before 3:30 PM and schedule one extra rush staff member.
+Why: arena demand and clear weather lift evening demand, while transit delay shifts some walk-ins into pickup orders.</code></pre>
+              <form class="agent-command-form" data-agent-form>
+                <label for="agent-command">Ask CityFlow</label>
+                <div>
+                  <input
+                    id="agent-command"
+                    name="command"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="Ask about staffing, inventory, routing, or source evidence..."
+                  />
+                  <button class="terminal-button primary" type="submit">Queue</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+        <section class="agent-workbench" aria-label="Agent interaction workbench">
+          <div class="agent-prompts">
+            <button type="button" data-agent-prompt="Why is demand above baseline?">Why is demand above baseline?</button>
+            <button type="button" data-agent-prompt="Show the source evidence for the prep recommendation.">Show source evidence</button>
+            <button type="button" data-agent-prompt="What should I do if the TTC delay clears early?">If TTC clears early?</button>
+            <button type="button" data-agent-prompt="Draft the manager brief for the 4 PM shift lead.">Draft shift brief</button>
+          </div>
+          <div class="agent-routing">
+            <button type="button" data-agent-route="Signal Agent">Signal Agent</button>
+            <button type="button" data-agent-route="Geo Agent">Geo Agent</button>
+            <button type="button" data-agent-route="Demand Agent">Demand Agent</button>
+            <button type="button" data-agent-route="Ops Agent">Ops Agent</button>
+            <button type="button" data-agent-route="Explanation Agent">Explanation Agent</button>
+          </div>
+          <output class="agent-output" data-agent-output>
+            Agent loop ready for Harbour Grind. Select a prompt or route a question to an agent.
+          </output>
+        </section>
+        <div class="terminal-orders">
+          <article><span>ORDER 01</span><strong>Increase prep by 21%</strong><p>Timing: 4-10 PM / Confidence: High / Source: Events + weather</p></article>
+          <article><span>ORDER 02</span><strong>Tighten delivery promise by 10 min</strong><p>Timing: now / Confidence: Medium / Source: Road restrictions</p></article>
+          <article><span>ORDER 03</span><strong>Run post-event pickup offer</strong><p>Timing: 9:30 PM / Confidence: Medium / Source: Pedestrian surge</p></article>
+        </div>
+      </div>
+    </section>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
