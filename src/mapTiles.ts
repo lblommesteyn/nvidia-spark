@@ -55,3 +55,22 @@ const signals: SignalMarker[] = [
     impact: 0.42,
   },
 ];
+
+const lonToTile = (lng: number, zoom: number) => ((lng + 180) / 360) * 2 ** zoom;
+
+const latToTile = (lat: number, zoom: number) => {
+  const rad = (lat * Math.PI) / 180;
+  return ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * 2 ** zoom;
+};
+
+const markerPosition = (lat: number, lng: number, zoom: number, centerX: number, centerY: number, width: number, height: number) => ({
+  x: (lonToTile(lng, zoom) - centerX) * tileSize + width / 2,
+  y: (latToTile(lat, zoom) - centerY) * tileSize + height / 2,
+});
+
+const radiusToPixels = (lat: number, lng: number, meters: number, zoom: number) => {
+  const metersPerLngDegree = 111_320 * Math.cos((lat * Math.PI) / 180);
+  const lngDelta = meters / metersPerLngDegree;
+  return Math.abs(lonToTile(lng + lngDelta, zoom) - lonToTile(lng, zoom)) * tileSize;
+};
+export function mountTorontoMap(_c: HTMLElement, _z=13){return()=>{};}
