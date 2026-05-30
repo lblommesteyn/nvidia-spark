@@ -1994,6 +1994,45 @@ body.lp-visible #particle-canvas {
   inset: 0;
 }
 
+/*
+ * Use width/height:100% (not just absolute inset:0) so the MapLibre container
+ * fills .map-wrap even when MapLibre's own `.maplibregl-map { position: relative }`
+ * rule wins the cascade (CSS injection order is non-deterministic in dev). The
+ * `.map-wrap > .map` selector also out-specifies `.maplibregl-map`. Without this
+ * the container collapses to height:0 and the map renders as a black box.
+ */
+.map-wrap > .map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 2D / 3D view toggle (top-right of the map, under the zoom control) */
+.map-view-toggle {
+  position: absolute;
+  right: 8px;
+  top: 78px;
+  z-index: 6;
+  min-width: 38px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--green);
+  background: rgba(10, 10, 10, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.map-view-toggle:hover {
+  color: #7effc2;
+  border-color: var(--green);
+  background: rgba(10, 16, 13, 0.96);
+}
+
 /* Layer toggle (top-left control) */
 .layer-toggle {
   position: absolute;

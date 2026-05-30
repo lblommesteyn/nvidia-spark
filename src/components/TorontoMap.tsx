@@ -10,6 +10,10 @@ interface Props {
 
 type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit" | "places";
 
+/** Default 3D camera — a tilted, slightly rotated view so the city reads as 3D. */
+const DEFAULT_PITCH = 50;
+const DEFAULT_BEARING = -18;
+
 const LAYER_META: { key: LayerKey; label: string }[] = [
   { key: "flow", label: "Flow areas" },
   { key: "traffic", label: "Traffic" },
@@ -24,6 +28,7 @@ export function TorontoMap({ home }: Props) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const homeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [ready, setReady] = useState(false);
+  const [tilted, setTilted] = useState(true);
   const [visible, setVisible] = useState<Record<LayerKey, boolean>>({
     flow: true,
     traffic: true,
@@ -46,22 +51,78 @@ export function TorontoMap({ home }: Props) {
       style: "https://tiles.openfreemap.org/styles/dark",
       center: [TORONTO_CENTER.lon, TORONTO_CENTER.lat],
       zoom: 12,
+      pitch: DEFAULT_PITCH,
+      bearing: DEFAULT_BEARING,
       maxBounds: TORONTO_BOUNDS,
       minZoom: 10.5,
       maxZoom: 18,
+      maxPitch: 70,
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
 
     // MapLibre measures its container at init. When the dashboard mounts the
-    // map can be revealed/laid-out in the same tick, leaving a 0px canvas that
-    // never recovers (blank map). A ResizeObserver keeps the canvas sized to
-    // its container, which fixes the "map not showing" case after route reveal.
-    const ro = new ResizeObserver(() => map.resize());
+    // map can be revealed/laid-out in the same tick, leaving the canvas sized to
+    // an intermediate layout (e.g. mid reveal-transition) and never repainting
+    // at the final size — a fully black map. A ResizeObserver catches size
+    // changes, and we also kick a few deferred resizes to cover the case where
+    // the container settles to its final height *after* the .terminal-app
+    // opacity-reveal transition (which does not always emit a resize event).
+    const kick = () => {
+      try {
+        map.resize();
+        map.triggerRepaint();
+      } catch {
+        /* map may be torn down */
+      }
+    };
+    const ro = new ResizeObserver(kick);
     if (containerRef.current) ro.observe(containerRef.current);
+    const rafId = requestAnimationFrame(() => requestAnimationFrame(kick));
+    // Cover the 180ms reveal transition + late layout settle.
+    const kickTimers = [120, 300, 600, 1000].map((ms) => window.setTimeout(kick, ms));
+
 
     map.on("load", async () => {
+      // ---- 3D building extrusions (context for the tilted view) ----
+      try {
+        const style = map.getStyle();
+        const vectorSrc = Object.entries(style.sources ?? {}).find(
+          ([, s]) => (s as { type?: string }).type === "vector",
+        )?.[0];
+        const firstSymbol = style.layers?.find((l) => l.type === "symbol")?.id;
+        if (vectorSrc) {
+          map.addLayer(
+            {
+              id: "3d-buildings",
+              source: vectorSrc,
+              "source-layer": "building",
+              type: "fill-extrusion",
+              minzoom: 13,
+              paint: {
+                "fill-extrusion-color": [
+                  "interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
+                  0, "#16202c",
+                  40, "#1d2c3c",
+                  120, "#27425c",
+                ],
+                "fill-extrusion-height": [
+                  "interpolate", ["linear"], ["zoom"],
+                  13, 0,
+                  14.5, ["coalesce", ["get", "render_height"], 6],
+                ],
+                "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+                "fill-extrusion-opacity": 0.82,
+              },
+            },
+            firstSymbol,
+          );
+        }
+      } catch {
+        /* buildings optional — style may lack a vector building layer */
+      }
+
       // ---- Neighbourhood flow choropleth ----
       try {
         const flow = await api.flow();
@@ -268,6 +329,8 @@ export function TorontoMap({ home }: Props) {
 
     return () => {
       ro.disconnect();
+      cancelAnimationFrame(rafId);
+      for (const t of kickTimers) clearTimeout(t);
       map.remove();
       mapRef.current = null;
     };
@@ -321,6 +384,17 @@ export function TorontoMap({ home }: Props) {
     return () => clearInterval(t);
   }, [ready]);
 
+  // Tilt toggle: 3D (pitched) ↔ 2D (straight-down).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.easeTo({
+      pitch: tilted ? DEFAULT_PITCH : 0,
+      bearing: tilted ? DEFAULT_BEARING : 0,
+      duration: 600,
+    });
+  }, [tilted]);
+
   // Home (business) marker + recenter.
   useEffect(() => {
     const map = mapRef.current;
@@ -341,6 +415,14 @@ export function TorontoMap({ home }: Props) {
   return (
     <div class="map-wrap">
       <div ref={containerRef} class="map" />
+      <button
+        type="button"
+        class="map-view-toggle"
+        onClick={() => setTilted((v) => !v)}
+        title={tilted ? "Switch to top-down 2D view" : "Switch to tilted 3D view"}
+      >
+        {tilted ? "2D" : "3D"}
+      </button>
       <div class="layer-toggle">
         <div class="layer-toggle-title">Layers</div>
         {LAYER_META.map((l) => (
