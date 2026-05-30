@@ -3,4 +3,4 @@ import { App } from "./App";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 
-render(<App />, document.getElementById("app")!);
+render(<App />, document.getElementById("react-root")!);

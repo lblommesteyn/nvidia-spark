@@ -47,10 +47,11 @@ revealElements.forEach((element) => {
   });
 });
 
+const heroLp = document.querySelector<HTMLElement>("#hero-lp");
 const terminalApp = document.querySelector<HTMLElement>("#terminal-app");
 const openTerminalButtons = document.querySelectorAll<HTMLButtonElement>("[data-open-terminal]");
 const closeTerminalButtons = document.querySelectorAll<HTMLButtonElement>("[data-close-terminal]");
-const beginStoryButtons = document.querySelectorAll<HTMLButtonElement>("[data-begin-story]");
+const beginStoryLinks = document.querySelectorAll<HTMLElement>("[data-begin-story]");
 
 const openTerminal = () => {
   if (!terminalApp) {
@@ -74,18 +75,13 @@ const closeTerminal = () => {
 
 openTerminalButtons.forEach((button) => button.addEventListener("click", openTerminal));
 closeTerminalButtons.forEach((button) => button.addEventListener("click", closeTerminal));
-beginStoryButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+beginStoryLinks.forEach((el) => {
+  el.addEventListener("click", (e) => {
+    e.preventDefault();
     const hero = document.querySelector<HTMLElement>("#hero");
-    if (!hero) {
-      return;
-    }
-
-    const targetY = hero.getBoundingClientRect().top + window.scrollY + window.innerHeight * 0.92;
-    window.scrollTo({
-      top: targetY,
-      behavior: reducedMotion ? "auto" : "smooth",
-    });
+    if (!hero) return;
+    const targetY = hero.getBoundingClientRect().top + window.scrollY + window.innerHeight * 0.5;
+    window.scrollTo({ top: targetY, behavior: reducedMotion ? "auto" : "smooth" });
   });
 });
 terminalApp?.addEventListener("click", (event) => {
@@ -156,7 +152,12 @@ async function boot() {
   }
 
   try {
-    cleanups.push(await mountParticleHero({ canvas, reducedMotion }));
+    document.body.classList.add("lp-visible");
+    cleanups.push(await mountParticleHero({ canvas, reducedMotion, onProgress: (p) => {
+      const gone = p > 0.025;
+      if (heroLp) heroLp.classList.toggle("is-gone", gone);
+      document.body.classList.toggle("lp-visible", !gone);
+    }}));
   } finally {
     document.body.classList.add("is-ready");
     window.setTimeout(() => document.querySelector("#boot")?.remove(), 650);

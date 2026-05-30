@@ -3,14 +3,216 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Toronto Monitor - real-time dashboard for transit, traffic, weather, 311 and events"
-    />
-    <title>Toronto Monitor</title>
+    <meta name="description" content="CityFlow monitors Toronto city signals and recommends operational actions for small businesses." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23020403'/%3E%3Cpath d='M12 42C24 48 40 48 52 42' fill='none' stroke='%237effc2' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='24' r='5' fill='%2344a8ff'/%3E%3Ccircle cx='32' cy='20' r='5' fill='%237effc2'/%3E%3Ccircle cx='48' cy='28' r='5' fill='%23ffb940'/%3E%3C/svg%3E" />
+    <title>CityFlow</title>
   </head>
   <body>
-    <div id="app"></div>
+    <a class="skip-link" href="#problem">Skip to content</a>
+
+    <div id="boot" class="boot-terminal" aria-live="polite">
+      <section class="boot-window" aria-label="CityFlow boot sequence">
+        <header>
+          <span>CITYFLOW LOCAL RUNTIME</span>
+          <span>TORONTO / DGX-SPARK</span>
+        </header>
+        <div class="boot-body">
+          <div class="boot-log">
+            <p>&gt; loading city_signal_kernel</p>
+            <p>&gt; rasterizing toronto silhouettes</p>
+            <p>&gt; preparing persistent gpu particle cloud</p>
+            <p>&gt; mounting local inference terminal</p>
+          </div>
+          <div class="boot-map" data-toronto-map="boot" aria-label="Toronto map preview"></div>
+        </div>
+      </section>
+    </div>
+
+    <main id="app">
+      <section id="hero" class="morph-hero" aria-labelledby="hero-title">
+        <div id="hero-pin" class="hero-pin">
+          <canvas id="particle-canvas" aria-hidden="true"></canvas>
+          <div class="hero-scanline" aria-hidden="true"></div>
+
+          <!-- Landing overlay: visible before scroll, fades out -->
+          <div class="hero-lp" id="hero-lp" aria-hidden="true">
+            <header class="hero-lp-nav">
+              <a class="hero-lp-brand" href="#app" aria-label="CityFlow home">
+                <span aria-hidden="true"></span>
+                CityFlow
+              </a>
+              <nav>
+                <a href="#problem">Product</a>
+                <a href="#agents">Agents</a>
+                <a href="#recommendations">Scenarios</a>
+                <button type="button" data-open-terminal>Open Terminal</button>
+              </nav>
+            </header>
+            <div class="hero-lp-copy">
+              <p class="eyebrow">NVIDIA Spark Hack Toronto</p>
+              <h1 id="hero-title">Operate before<br>the city reaches<br>your storefront.</h1>
+              <p class="hero-lp-sub">CityFlow reads transit, events, weather, roads, and construction — and turns those signals into manager-ready decisions before they reach your door.</p>
+              <div class="hero-lp-actions">
+                <a class="hero-lp-cta primary" href="#hero" data-begin-story>Watch the city assemble</a>
+                <button class="hero-lp-cta" type="button" data-open-terminal>Open Terminal</button>
+              </div>
+            </div>
+            <div class="hero-lp-scroll-hint" aria-hidden="true">
+              <span>Scroll</span>
+              <svg width="1" height="48" viewBox="0 0 1 48"><line x1="0.5" y1="0" x2="0.5" y2="48" stroke="currentColor" stroke-width="1"/></svg>
+            </div>
+          </div>
+
+          <nav class="scene-nav" aria-label="Particle story progress">
+            <span data-scene-dot="0"></span>
+            <span data-scene-dot="1"></span>
+            <span data-scene-dot="2"></span>
+            <span data-scene-dot="3"></span>
+            <span data-scene-dot="4"></span>
+            <span data-scene-dot="5"></span>
+            <span data-scene-dot="6"></span>
+          </nav>
+
+          <article class="scene-copy is-active" data-scene-copy="0">
+            <p class="eyebrow">The quiet layer</p>
+            <h2>At first, the city looks still.</h2>
+            <p>Then the operating signals start to surface, connect, and move faster than a manager can track by hand.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="1">
+            <p class="eyebrow">City silhouette</p>
+            <h2>CN Tower, bank towers, and the <mark>city layer</mark> CityFlow reads every hour.</h2>
+            <p>The skyline becomes a data surface: Toronto geography, local timing, and the businesses that feel every disruption first.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="2">
+            <p class="eyebrow">Transit signal</p>
+            <h2>A TTC streetcar delay is not just transit. It is a <mark>foot-traffic event</mark>.</h2>
+            <p>Commute disruption shifts the morning rush, curbside pickup, delivery timing, and staffing demand around the storefront.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="3">
+            <p class="eyebrow">Forecast layer</p>
+            <h2>Particles snap from disruption into a <mark>demand curve</mark>.</h2>
+            <p>CityFlow estimates neighborhood demand direction, confidence, timing, and revenue exposure over the next 24 to 72 hours.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="4">
+            <p class="eyebrow">Small business layer</p>
+            <h2>The forecast turns into <mark>counter-level decisions</mark>.</h2>
+            <p>Increase prep, adjust staffing, route delivery, or push a timed promotion with source attribution and clear confidence.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="5">
+            <p class="eyebrow">Signal layer</p>
+            <h2>The map breaks into <mark>neighborhood signals</mark> and live pins.</h2>
+            <p>CityFlow reads public Toronto data and local context continuously instead of waiting for a manager to check five apps.</p>
+          </article>
+          <article class="scene-copy" data-scene-copy="6">
+            <p class="eyebrow">CityFlow</p>
+            <h2>A Bloomberg Terminal for <mark>physical businesses</mark>.</h2>
+            <p>Autonomous local intelligence for cafes, retailers, restaurants, and service businesses across Toronto.</p>
+            <div class="hero-actions">
+              <button class="terminal-button primary" type="button" data-open-terminal>Open CityFlow Terminal</button>
+              <a class="terminal-button" href="#problem">Read the case</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="problem" class="content-section problem-section reveal" aria-labelledby="problem-title">
+        <p class="eyebrow">Problem</p>
+        <h2 id="problem-title">Small businesses discover demand shifts too late.</h2>
+        <div class="problem-grid">
+          <article><strong>TTC disruption</strong><span>Morning foot traffic shifts away from a cafe before staff can react.</span></article>
+          <article><strong>Nearby event</strong><span>A restaurant sees a surge after doors open, not when prep decisions mattered.</span></article>
+          <article><strong>Road closure</strong><span>Delivery times climb, cancellations rise, and the manager learns from complaints.</span></article>
+          <article><strong>Construction access</strong><span>A storefront loses casual walk-ins for days without an operating plan.</span></article>
+        </div>
+      </section>
+
+      <section id="terminal" class="terminal-section reveal" aria-labelledby="terminal-title">
+        <div>
+          <p class="eyebrow">Toronto signal terminal</p>
+          <h2 id="terminal-title">A business-specific operating screen, not a generic city dashboard.</h2>
+          <p>Harbour Grind sees its radius, demand curve, signal evidence, and agent loop in one terminal.</p>
+        </div>
+        <div class="terminal-window">
+          <header><span>cityflow://harbour-grind/live-context</span><span>UPDATED 30S AGO</span></header>
+          <div class="terminal-grid">
+            <div class="real-map" data-toronto-map="terminal" aria-label="OpenStreetMap view of downtown Toronto"></div>
+            <pre><code>&gt; business: Harbour Grind / Financial District
+&gt; radius: 1.8km
+&gt; forecast: +$3,032 above baseline
+&gt; top_signal: Scotiabank Arena event + TTC delay
+&gt; next_action: increase prep 21% before 4 PM</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="agents" class="content-section agents-section reveal" aria-labelledby="agents-title">
+        <p class="eyebrow">Multi-agent workflow</p>
+        <h2 id="agents-title">CityFlow thinks in a pipeline, not a prompt.</h2>
+        <div class="agent-flow" aria-label="CityFlow agent pipeline">
+          <article><span>01</span><strong>Signal Ingestion</strong><p>Fetch and normalize city, transit, weather, event, and construction feeds.</p></article>
+          <article><span>02</span><strong>Geo Context</strong><p>Map signals to neighborhoods, radii, storefronts, and operating windows.</p></article>
+          <article><span>03</span><strong>Demand Forecast</strong><p>Estimate demand direction, volatility, confidence, and expected impact.</p></article>
+          <article><span>04</span><strong>Operations</strong><p>Convert forecasts into staffing, prep, routing, promotion, and hours actions.</p></article>
+          <article><span>05</span><strong>Explanation</strong><p>Turn source evidence into manager-ready language with uncertainty.</p></article>
+          <article><span>06</span><strong>Monitor</strong><p>Watch for signal changes and trigger a refreshed operating order.</p></article>
+        </div>
+      </section>
+
+      <section id="recommendations" class="content-section recommendation-section reveal" aria-labelledby="recommendations-title">
+        <p class="eyebrow">Toronto demo scenarios</p>
+        <h2 id="recommendations-title">Live recommendation cards built like operating orders.</h2>
+        <div class="recommendation-grid">
+          <article>
+            <header><span>PRIORITY 01</span><strong>Transit disruption</strong></header>
+            <h3>Reduce front-of-house staffing slightly and push pickup promotion.</h3>
+            <p>TTC disruption near the morning commute window is likely to lower walk-ins and shift order timing.</p>
+            <footer><span>Timing: 7-10 AM</span><span>Confidence: Medium</span><span>Source: TTC + roads</span></footer>
+          </article>
+          <article>
+            <header><span>PRIORITY 02</span><strong>Event spike</strong></header>
+            <h3>Increase prep by 21% and schedule one extra rush staff member.</h3>
+            <p>A nearby arena event plus favorable weather should lift pre-event and post-event demand.</p>
+            <footer><span>Timing: 4-10 PM</span><span>Confidence: High</span><span>Source: Events + weather</span></footer>
+          </article>
+          <article>
+            <header><span>PRIORITY 03</span><strong>Construction access risk</strong></header>
+            <h3>Shift messaging to pickup and reduce walk-in staffing exposure.</h3>
+            <p>Multi-day construction near the storefront may suppress browsing and redirect demand to planned orders.</p>
+            <footer><span>Timing: 72H</span><span>Confidence: Medium</span><span>Source: Construction + radius</span></footer>
+          </article>
+        </div>
+      </section>
+
+      <section id="nvidia" class="nvidia-band reveal" aria-labelledby="nvidia-title">
+        <div>
+          <p class="eyebrow">Local-first AI</p>
+          <h2 id="nvidia-title">Designed for open models on NVIDIA DGX Spark-class hardware.</h2>
+          <p>Local inference handles summarization, classification, agent planning, and recommendation generation while cached city data keeps the demo reliable offline.</p>
+        </div>
+        <dl>
+          <div><dt>Runtime</dt><dd>Local model active</dd></div>
+          <div><dt>GPU</dt><dd>Embedding + reranking ready</dd></div>
+          <div><dt>Data</dt><dd>Toronto Open Data cache</dd></div>
+          <div><dt>Mode</dt><dd>Human approval first</dd></div>
+        </dl>
+      </section>
+
+      <footer class="footer-cta">
+        <p class="eyebrow">CityFlow</p>
+        <h2>Predict the city. Operate before the spike.</h2>
+        <button class="terminal-button primary" type="button" data-open-terminal>Open CityFlow Terminal</button>
+        <a class="terminal-button" href="#hero">Replay the particle story</a>
+        <p class="map-attribution">Map tiles &copy; OpenStreetMap contributors and &copy; CARTO.</p>
+      </footer>
+    </main>
+
+    <section id="terminal-app" class="terminal-app" aria-labelledby="terminal-app-title" aria-hidden="true">
+      <div class="terminal-app-shell" role="dialog" aria-modal="true" aria-label="CityFlow terminal">
+        <div id="react-root"></div>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

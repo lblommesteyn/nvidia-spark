@@ -16,6 +16,7 @@ interface SceneCloud {
 interface ParticleHeroOptions {
   canvas: HTMLCanvasElement;
   reducedMotion: boolean;
+  onProgress?: (progress: number) => void;
 }
 
 const rasterWidth = 1000;
@@ -61,7 +62,7 @@ void main() {
   vec2 radial = normalize(p.xy + vec2(0.001));
   p.xy += radial * drama * uBillow * (0.28 + seed * 0.24);
 
-  float twist = drama * (0.22 + seed * 0.48) + uScrollProgress * 0.34;
+  float twist = drama * (0.22 + seed * 0.48);
   float s = sin(twist);
   float c = cos(twist);
   p.xy = mat2(c, -s, s, c) * p.xy;
@@ -229,7 +230,7 @@ function makeRandomAttributes(count: number) {
   return { dirs, seeds };
 }
 
-export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroOptions) {
+export async function mountParticleHero({ canvas, reducedMotion, onProgress }: ParticleHeroOptions) {
   const mobile = window.matchMedia("(max-width: 760px)").matches;
   const count = mobile ? 15000 : 42000;
   const clouds = await Promise.all(scenes.map((scene, index) => sampleScene(scene, count, 1000 + index * 7919)));
@@ -299,7 +300,7 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
   let mouseY = 0;
   let cursorSkew = 0;
   let targetShock = 0;
-  let currentShock = 0;
+  let currentShock = 1.8;
   let targetScrollVelocity = 0;
   let currentScrollVelocity = 0;
   let currentProgress = 0;
@@ -345,10 +346,11 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
 
     const index = Math.min(scenes.length - 2, Math.floor(scenePosition));
     const nextIndex = Math.min(scenes.length - 1, index + 1);
-    const morph = scenePosition - index;
+    const rawMorph = scenePosition - index;
+    const easedMorph = rawMorph < 0.38 ? 0 : Math.min(1, (rawMorph - 0.38) / 0.62);
     setPair(index, nextIndex);
-    material.uniforms.uMorph.value = progress >= 0.999 ? 1 : morph;
-    targetShock = Math.sin(Math.min(1, Math.max(0, morph)) * Math.PI);
+    material.uniforms.uMorph.value = progress >= 0.999 ? 1 : easedMorph;
+    targetShock = Math.sin(Math.min(1, Math.max(0, rawMorph)) * Math.PI);
     targetScrollVelocity = velocity;
     material.uniforms.uScrollProgress.value = progress;
   };
@@ -386,8 +388,8 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
       (reducedMotion ? 0 : currentShock * (mobile ? 0.45 : 1.05)) -
       currentProgress * (mobile ? 0.18 : 0.42);
     camera.lookAt(0, 0, 0);
-    points.rotation.y = mouseX * 0.08 + currentProgress * 0.18;
-    points.rotation.x = mouseY * 0.06 + currentShock * 0.03;
+    points.rotation.y = mouseX * 0.08;
+    points.rotation.x = mouseY * 0.06;
     material.uniforms.uTime.value = time * 0.001;
     material.uniforms.uShock.value = reducedMotion ? 0 : currentShock;
     material.uniforms.uScrollVelocity.value = reducedMotion ? 0 : currentScrollVelocity;
@@ -414,7 +416,7 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
     pin: "#hero-pin",
     scrub: true,
     anticipatePin: 1,
-    onUpdate: (self) => updateProgress(self.progress, self.getVelocity()),
+    onUpdate: (self) => { updateProgress(self.progress, self.getVelocity()); onProgress?.(self.progress); },
   });
 
   resize();

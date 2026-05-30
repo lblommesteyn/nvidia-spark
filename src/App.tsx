@@ -442,6 +442,10 @@ export function App() {
           )}
           <button class="btn-ghost" title="Reset tile layout" onClick={() => resetDashboardLayout()}>⟲ Layout</button>
           <button class="btn-primary" onClick={() => setShowSetup(true)}>+ Business</button>
+          <button class="btn-ghost" title="Close terminal" data-close-terminal onClick={() => {
+            document.getElementById("terminal-app")?.setAttribute("aria-hidden", "true");
+            document.body.classList.remove("terminal-open");
+          }}>✕ Close</button>
         </div>
       </header>
 
