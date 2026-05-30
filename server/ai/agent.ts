@@ -1,5 +1,6 @@
 import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
 import { chat, type ChatResult } from "./provider.ts";
+import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businesses } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
@@ -28,22 +29,28 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile): string 
     })
     .join("\n\n");
 
+  const patterns = findSimilarMoments(ctx, 12);
+  const patternBlock = historicalPatternBlock(patterns);
+
   return [
     "You are a local-intelligence assistant for a Toronto small-business owner.",
     "Answer ONLY from the Toronto data provided below. Be concrete and practical:",
     "tie observations to business impact (foot traffic, deliveries, staffing, safety, opportunities).",
+    "When HISTORICAL_PATTERNS are provided, cite them explicitly: 'Based on N similar past moments...'",
     "If data is marked [demo], note it may be placeholder. Cite distances when relevant.",
     "Keep answers tight and actionable.",
     "",
     profileBlock,
     `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
     "",
-    "DETAILED NEARBY DATA:",
+    patternBlock,
+    "",
+    "LIVE NEARBY DATA:",
     civicBlock || "(no nearby civic records)",
     "",
     `Weather: ${JSON.stringify(ctx.weather.data)}`,
     `Air quality: ${JSON.stringify(ctx.airQuality.data)}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export async function askForBusiness(

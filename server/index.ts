@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { businesses, type BusinessInput } from "./db.ts";
+import { businesses, snapshots, type BusinessInput } from "./db.ts";
 import { geocode } from "./geo.ts";
 import { CIVIC_SOURCES, getCivicSource, loadCivicSource } from "./sources/civic.ts";
 import { getAirQuality, getWeather } from "./sources/environment.ts";
@@ -19,6 +19,8 @@ import {
 } from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
+import { findSimilarMoments } from "./ai/patterns.ts";
+import { startSnapshotService } from "./ai/snapshot.ts";
 import { activeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
@@ -288,6 +290,28 @@ function pointFromQuery(lon?: string, lat?: string): GeoPoint {
   return Number.isFinite(x) && Number.isFinite(y) ? { lon: x, lat: y } : TORONTO;
 }
 
+// ---- Historical patterns API ----
+app.get("/api/patterns", async (c) => {
+  const p = pointFromQuery(c.req.query("lon"), c.req.query("lat"));
+  const n = Math.min(Number(c.req.query("n") ?? 12), 50);
+  const businessId = c.req.query("businessId");
+  const radiusM = Number(c.req.query("radius") ?? 750);
+  const ctx = businessId
+    ? await buildContext(scopeFromBusiness(businesses.get(businessId)!, radiusM))
+    : await buildContext({ point: p, radiusM });
+  return c.json({
+    total: snapshots.count(),
+    moments: findSimilarMoments(ctx, n),
+  });
+});
+
+app.get("/api/patterns/stats", (c) =>
+  c.json({ total: snapshots.count(), locations: 0 }),
+);
+
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port });
 console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${activeProvider()})`);
+
+// Start background snapshot capture — builds the historical pattern library over time.
+startSnapshotService(15 * 60_000);

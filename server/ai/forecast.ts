@@ -12,6 +12,7 @@
  */
 import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
 import { activeProvider, chat } from "./provider.ts";
+import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { getWeatherForecast, type WeatherHour } from "../sources/environment.ts";
 import { businesses } from "../db.ts";
 import type { BusinessProfile, CivicRecord, GeoPoint } from "../types.ts";
@@ -357,16 +358,20 @@ export function signalDigest(ctx: LocationContext): Record<string, unknown> {
 
 export function llmPrompt(ctx: LocationContext, business?: BusinessProfile): string {
   const digest = signalDigest(ctx);
+  const patterns = findSimilarMoments(ctx, 8);
+  const patternBlock = historicalPatternBlock(patterns);
   const who = business
     ? `${business.name}, a ${business.businessType} (${business.headcount} staff) at ${business.address}${business.neighbourhood ? `, ${business.neighbourhood}` : ""}.`
     : "a Toronto small business at the given location.";
   return [
     "You are a Toronto demand-forecasting model for small businesses.",
     `Business: ${who}`,
-    "Reason over the live signals below and forecast customer demand for the next ~12 hours.",
+    "Reason over the live signals AND historical patterns below to forecast demand for the next ~12 hours.",
     "",
-    "SIGNALS (JSON):",
+    "LIVE SIGNALS (JSON):",
     JSON.stringify(digest, null, 2),
+    "",
+    patternBlock,
     "",
     "Return ONLY a JSON object, no prose, with this exact shape:",
     `{
@@ -377,8 +382,8 @@ export function llmPrompt(ctx: LocationContext, business?: BusinessProfile): str
   "windows": [{"label": "<e.g. Lunch (11-14)>", "level": "<level>", "note": "<short>"}],
   "actions": ["<concrete owner action>"]
 }`,
-    "Keep it grounded strictly in the signals. 3-5 drivers, 3 windows, 2-4 actions.",
-  ].join("\n");
+    "3-5 drivers, 3 windows, 2-4 actions. If historical patterns are present, factor them into score and headline.",
+  ].filter(Boolean).join("\n");
 }
 
 function parseLlmForecast(text: string): Partial<DemandForecast> | null {
