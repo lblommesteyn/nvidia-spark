@@ -1,0 +1,10 @@
+# Training stack for scripts/train_lora.py — install on the GX10 (CUDA), NOT this Mac.
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r scripts/requirements-train.txt
+# Versions are floors known to carry the SFTConfig/chat-template API used here.
+transformers>=4.44
+trl>=0.9.6
+peft>=0.12
+datasets>=2.20
+accelerate>=0.33
+bitsandbytes>=0.43   # only needed for --load-4bit (QLoRA)
