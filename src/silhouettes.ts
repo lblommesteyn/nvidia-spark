@@ -172,4 +172,22 @@ export const scenes: SceneDefinition[] = [
       <path d="M480 372 L650 244 L778 402 L480 372 L300 300 L560 168 L650 244" fill="none" stroke-width="12"/>
     `),
   },
+  {
+    id: "wordmark",
+    label: "CityFlow",
+    color: [0.49, 1, 0.75],
+    palette: [
+      [0.49, 1, 0.75],
+      [0.35, 0.73, 1],
+      [1, 0.72, 0.25],
+    ],
+    depth: 0.42,
+    svg: svgFrame(`
+      <text x="500" y="330" text-anchor="middle" font-family="Impact, Arial Black, sans-serif" font-size="154" letter-spacing="2" stroke="none">CityFlow</text>
+      <path d="M230 392 C350 430 650 430 770 392" fill="none" stroke-width="22"/>
+      <circle cx="230" cy="392" r="22"/>
+      <circle cx="500" cy="415" r="18"/>
+      <circle cx="770" cy="392" r="22"/>
+    `),
+  },
 ];
