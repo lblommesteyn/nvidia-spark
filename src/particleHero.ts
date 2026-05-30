@@ -288,6 +288,71 @@ export async function mountParticleHero({ canvas, reducedMotion }: ParticleHeroO
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), mobile ? 0.22 : 0.28, 0.28, 0.72);
   composer.addPass(bloom);
 
+  let width = 0;
+  let height = 0;
+  let rafId = 0;
+  let visible = !document.hidden;
+  let sceneIndex = 0;
+  let targetMouseX = 0;
+  let targetMouseY = 0;
+  let mouseX = 0;
+  let mouseY = 0;
+  let cursorSkew = 0;
+  let targetShock = 0;
+  let currentShock = 0;
+  let targetScrollVelocity = 0;
+  let currentScrollVelocity = 0;
+  let currentProgress = 0;
+  const rootStyle = document.documentElement.style;
+
+  const setPair = (a: number, b: number) => {
+    if (sceneIndex === a && (geometry.getAttribute("positionB") as THREE.BufferAttribute).array === clouds[b].positions) {
+      return;
+    }
+
+    sceneIndex = a;
+    geometry.setAttribute("position", new THREE.BufferAttribute(clouds[a].positions, 3));
+    geometry.setAttribute("positionA", new THREE.BufferAttribute(clouds[a].positions, 3));
+    geometry.setAttribute("positionB", new THREE.BufferAttribute(clouds[b].positions, 3));
+    geometry.setAttribute("colorA", new THREE.BufferAttribute(clouds[a].colors, 3));
+    geometry.setAttribute("colorB", new THREE.BufferAttribute(clouds[b].colors, 3));
+  };
+
+  const setActiveCopy = (active: number) => {
+    document.querySelectorAll<HTMLElement>("[data-scene-copy]").forEach((element) => {
+      element.classList.toggle("is-active", Number(element.dataset.sceneCopy) === active);
+    });
+    document.querySelectorAll<HTMLElement>("[data-scene-dot]").forEach((element) => {
+      element.classList.toggle("is-active", Number(element.dataset.sceneDot) === active);
+    });
+    document.querySelectorAll<HTMLElement>("[data-story-line]").forEach((element) => {
+      element.classList.toggle("is-active", Number(element.dataset.storyLine) === active);
+    });
+  };
+
+  const updateProgress = (progress: number, velocity = 0) => {
+    const scenePosition = progress * (scenes.length - 1);
+    const activeCopy = Math.min(scenes.length - 1, Math.max(0, Math.round(scenePosition)));
+    setActiveCopy(activeCopy);
+    currentProgress = progress;
+
+    if (reducedMotion) {
+      setPair(activeCopy, activeCopy);
+      material.uniforms.uMorph.value = 0;
+      material.uniforms.uShock.value = 0;
+      return;
+    }
+
+    const index = Math.min(scenes.length - 2, Math.floor(scenePosition));
+    const nextIndex = Math.min(scenes.length - 1, index + 1);
+    const morph = scenePosition - index;
+    setPair(index, nextIndex);
+    material.uniforms.uMorph.value = progress >= 0.999 ? 1 : morph;
+    targetShock = Math.sin(Math.min(1, Math.max(0, morph)) * Math.PI);
+    targetScrollVelocity = velocity;
+    material.uniforms.uScrollProgress.value = progress;
+  };
+
 
   document.body.classList.add("is-ready");
   window.setTimeout(() => document.querySelector("#boot")?.remove(), 650);
