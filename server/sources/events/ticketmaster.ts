@@ -50,10 +50,15 @@ export async function loadTicketmasterEvents(): Promise<SourceResult<CivicRecord
     "events:ticketmaster",
     async () => {
       const key = process.env.TICKETMASTER_API_KEY!;
+      // Ticketmaster wants ISO8601 with no milliseconds, in UTC.
+      const fmt = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+      const now = new Date();
+      const end = new Date(now.getTime() + 270 * 24 * 60 * 60 * 1000); // ~9 months out
       const url =
         "https://app.ticketmaster.com/discovery/v2/events.json" +
         `?apikey=${encodeURIComponent(key)}` +
-        "&latlong=43.6535,-79.3839&radius=15&unit=miles&size=50&sort=date,asc";
+        "&latlong=43.6535,-79.3839&radius=15&unit=miles&size=199&sort=date,asc" +
+        `&startDateTime=${fmt(now)}&endDateTime=${fmt(end)}`;
       const res = await fetchJson<TmResponse>(url, { timeoutMs: 9000 });
       const events = res._embedded?.events ?? [];
       const records: CivicRecord[] = events.map((ev, i) => {

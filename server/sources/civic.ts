@@ -29,6 +29,12 @@ export interface CivicSourceDef {
   limit?: number;
   /** Map a raw CKAN row to a normalized record (return null to skip). */
   map?: (row: Record<string, unknown>, i: number) => CivicRecord | null;
+  /**
+   * Treat this source as a city/region-wide signal: never distance-filter it
+   * to the business radius (e.g. airport flights, which all sit at YYZ ~20km
+   * out but are still relevant as a visitor-inflow signal).
+   */
+  areaWide?: boolean;
   /** Shown when the live feed is unreachable or empty. */
   demo?: CivicRecord[];
   /**
@@ -187,6 +193,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Flight Arrivals (YYZ)",
     category: "aviation",
     attribution: "aviationstack / OpenSky",
+    areaWide: true,
     load: loadFlights,
     demo: [
       { id: "flight-d1", category: "aviation", title: "YYZ arrivals", detail: "Toronto Pearson — visitor inflow", lon: -79.6306, lat: 43.6777 },

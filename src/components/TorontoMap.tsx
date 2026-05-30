@@ -8,7 +8,7 @@ interface Props {
   home?: { lon: number; lat: number; label: string } | null;
 }
 
-type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit";
+type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit" | "places";
 
 const LAYER_META: { key: LayerKey; label: string }[] = [
   { key: "flow", label: "Flow areas" },
@@ -16,6 +16,7 @@ const LAYER_META: { key: LayerKey; label: string }[] = [
   { key: "construction", label: "Construction" },
   { key: "bikeshare", label: "Bike share" },
   { key: "transit", label: "Transit" },
+  { key: "places", label: "Events · Parking · Flights" },
 ];
 
 export function TorontoMap({ home }: Props) {
@@ -29,6 +30,7 @@ export function TorontoMap({ home }: Props) {
     construction: true,
     bikeshare: true,
     transit: false,
+    places: true,
   });
   const [stats, setStats] = useState<{ closures: number; bikes: number; ttc: number }>({
     closures: 0,
@@ -206,8 +208,30 @@ export function TorontoMap({ home }: Props) {
           },
         });
 
+        // Places of interest — events, parking, flights (aviation), alerts
+        map.addLayer({
+          id: "place-pts",
+          type: "circle",
+          source: "geo",
+          filter: ["in", ["get", "category"], ["literal", ["event", "parking", "aviation", "alert"]]],
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3.5, 15, 7],
+            "circle-color": [
+              "match", ["get", "category"],
+              "event", "#f72585",
+              "parking", "#4895ef",
+              "aviation", "#ffd166",
+              "alert", "#ff5d5d",
+              "#cccccc",
+            ],
+            "circle-stroke-color": "#0a0a0a",
+            "circle-stroke-width": 0.8,
+            "circle-opacity": 0.9,
+          },
+        });
+
         // Popups for the point feeds.
-        for (const id of ["bike-pts", "closure-pts", "transit-pts"]) {
+        for (const id of ["bike-pts", "closure-pts", "transit-pts", "place-pts"]) {
           map.on("click", id, (e) => {
             const p = e.features?.[0]?.properties as { title: string; detail: string } | undefined;
             if (!p) return;
@@ -253,6 +277,7 @@ export function TorontoMap({ home }: Props) {
     set("closure-pts", visible.construction);
     set("bike-pts", visible.bikeshare);
     set("transit-pts", visible.transit);
+    set("place-pts", visible.places);
   }, [visible, ready]);
 
   // Live refresh: re-pull moving feeds and update sources in place.

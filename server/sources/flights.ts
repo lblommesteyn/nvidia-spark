@@ -32,7 +32,11 @@ interface AviationstackFlight {
 async function viaAviationstack(): Promise<SourceResult<CivicRecord[]>> {
   const key = process.env.AVIATIONSTACK_KEY!;
   const url = `https://api.aviationstack.com/v1/flights?access_key=${encodeURIComponent(key)}&arr_iata=YYZ&flight_status=active&limit=40`;
-  const res = await fetchJson<{ data?: AviationstackFlight[] }>(url, { timeoutMs: 9000 });
+  const res = await fetchJson<{ data?: AviationstackFlight[]; error?: { message?: string } }>(url, { timeoutMs: 9000 });
+  if (res.error) {
+    // e.g. usage_limit_reached on the free plan — signal caller to fall back.
+    return { source: "flights", status: "demo", fetchedAt: nowIso(), note: `aviationstack: ${res.error.message ?? "unavailable"}`, data: [], attribution: "aviationstack — flight arrivals" };
+  }
   const flights = res.data ?? [];
   const records: CivicRecord[] = flights.map((f, i) => ({
     id: `flight-${f.flight?.iata ?? i}`,
@@ -63,33 +67,52 @@ interface OpenSkyResponse {
   states?: unknown[][];
 }
 
-/** Keyless fallback: count live aircraft in the YYZ approach box via OpenSky. */
+/**
+ * Keyless live fallback: individual aircraft currently over the Toronto area via
+ * OpenSky. Each airborne aircraft becomes a mappable record (real position,
+ * callsign, altitude), sorted lowest-first so arrivals on final approach lead.
+ */
 async function viaOpenSky(): Promise<SourceResult<CivicRecord[]>> {
   const url =
     "https://opensky-network.org/api/states/all?lamin=43.4&lomin=-80.1&lamax=43.95&lomax=-79.2";
   const res = await fetchJson<OpenSkyResponse>(url, { timeoutMs: 9000 });
   const states = res.states ?? [];
-  // Aircraft below ~3000m on approach are likely arriving.
-  const arriving = states.filter((s) => {
-    const baroAlt = Number(s[7]);
-    const onGround = Boolean(s[8]);
-    return !onGround && Number.isFinite(baroAlt) && baroAlt < 3000;
-  });
-  const record: CivicRecord = {
-    id: "flights-yyz-inflow",
-    category: "aviation",
-    title: "YYZ approach traffic",
-    detail: `${arriving.length} aircraft on approach · ${states.length} in Toronto airspace`,
-    lon: YYZ.lon,
-    lat: YYZ.lat,
-    meta: { provider: "opensky", approaching: arriving.length, airspace: states.length },
-  };
+  const airborne = states.filter((s) => !Boolean(s[8]) && s[5] != null && s[6] != null);
+  const records: CivicRecord[] = airborne
+    .map((s) => {
+      const callsign = String(s[1] ?? "").trim() || "Unknown";
+      const lon = Number(s[5]);
+      const lat = Number(s[6]);
+      const altM = Number(s[7]);
+      const velMs = Number(s[9]);
+      const country = String(s[2] ?? "").trim();
+      const approaching = Number.isFinite(altM) && altM < 3000;
+      return {
+        id: `flight-${String(s[0])}`,
+        category: "aviation" as const,
+        title: callsign,
+        detail: [
+          approaching ? "On approach" : "Overflight",
+          Number.isFinite(altM) ? `${Math.round(altM).toLocaleString()} m` : null,
+          Number.isFinite(velMs) ? `${Math.round(velMs * 3.6)} km/h` : null,
+          country || null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        lon,
+        lat,
+        meta: { provider: "opensky", altitudeM: Number.isFinite(altM) ? altM : null, country, approaching },
+      };
+    })
+    .sort((a, b) => ((a.meta.altitudeM as number) ?? Infinity) - ((b.meta.altitudeM as number) ?? Infinity))
+    .slice(0, 30);
+  const onApproach = records.filter((r) => r.meta?.approaching).length;
   return {
     source: "flights",
     status: "live" as const,
     fetchedAt: nowIso(),
-    note: "Live aircraft over Toronto (OpenSky). Add AVIATIONSTACK_KEY for scheduled arrivals with airlines/terminals.",
-    data: [record],
+    note: `${airborne.length} aircraft live over Toronto (${onApproach} on approach). OpenSky live positions; add a working AVIATIONSTACK_KEY for scheduled arrivals with airlines/terminals.`,
+    data: records.length > 0 ? records : [{ id: "flights-yyz-inflow", category: "aviation", title: "YYZ airspace", detail: "No airborne aircraft in range right now", lon: YYZ.lon, lat: YYZ.lat, meta: { provider: "opensky" } }],
     attribution: "OpenSky Network (live aircraft)",
   };
 }
@@ -99,15 +122,28 @@ const DEMO: CivicRecord[] = [
 ];
 
 export async function loadFlights(): Promise<SourceResult<CivicRecord[]>> {
+  let note: string | undefined;
+  // Prefer aviationstack (scheduled arrivals) when the key works, else fall
+  // back to live OpenSky aircraft, else demo — so there's always flight data.
+  if (aviationstackEnabled()) {
+    try {
+      const r = await viaAviationstack();
+      if (r.data.length > 0) return r;
+      note = r.note; // e.g. quota reached
+    } catch (err) {
+      note = `aviationstack unavailable (${err instanceof Error ? err.message : "error"})`;
+    }
+  }
   try {
-    if (aviationstackEnabled()) return await viaAviationstack();
-    return await viaOpenSky();
+    const sky = await viaOpenSky();
+    if (note) sky.note = `${note}. ${sky.note}`;
+    return sky;
   } catch (err) {
     return {
       source: "flights",
       status: "demo",
       fetchedAt: nowIso(),
-      note: `Live flight data unavailable (${err instanceof Error ? err.message : "error"}); showing demo. Add AVIATIONSTACK_KEY to enable.`,
+      note: `Live flight data unavailable (${err instanceof Error ? err.message : "error"})${note ? `; ${note}` : ""}; showing demo.`,
       data: DEMO,
       attribution: "aviationstack / OpenSky",
     };

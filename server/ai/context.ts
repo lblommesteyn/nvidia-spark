@@ -59,12 +59,22 @@ export async function buildContext(scope: ContextScope): Promise<LocationContext
   const civic: CivicGroup[] = civicResults.map((result, idx) => {
     const def = CIVIC_SOURCES[idx];
     const withCoords = result.data.filter((r) => r.lon != null && r.lat != null);
-    const areaWide = withCoords.length === 0;
+    // A source is "area-wide" if it has no coordinates to scope by, OR it's
+    // explicitly flagged as a city/region-wide signal (e.g. airport flights).
+    const areaWide = withCoords.length === 0 || def.areaWide === true;
 
     let nearby: CivicRecord[];
     if (areaWide) {
-      // No coordinates available — surface a small city-wide sample instead.
-      nearby = result.data.slice(0, 6);
+      // Not distance-scoped — surface a sample, annotated with distance when
+      // coordinates exist (so the UI can still show how far, e.g. to YYZ).
+      const base = withCoords.length > 0 ? withCoords : result.data;
+      nearby = base
+        .map((rec) =>
+          rec.lon != null && rec.lat != null
+            ? { ...rec, distanceM: distanceM(scope.point, { lon: rec.lon, lat: rec.lat }) }
+            : rec,
+        )
+        .slice(0, 15);
     } else {
       nearby = withCoords
         .map((rec) => ({
