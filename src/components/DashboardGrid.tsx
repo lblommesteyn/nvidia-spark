@@ -5,6 +5,10 @@ import "gridstack/dist/gridstack.min.css";
 
 export interface GridTile {
   id: string;
+  /** Default column position (0–11). Omit to auto-place. */
+  x?: number;
+  /** Default row position. Omit to auto-place. */
+  y?: number;
   /** Default width in columns (1–12). */
   w: number;
   /** Default height in rows. */
@@ -43,7 +47,7 @@ export function DashboardGrid({ tiles, storageKey = "tomon-grid-layout" }: Props
   const defaultsRef = useRef<Record<string, Geom>>({});
 
   // Keep latest default geometry per tile id.
-  for (const t of tiles) defaultsRef.current[t.id] = { w: t.w, h: t.h };
+  for (const t of tiles) defaultsRef.current[t.id] = { x: t.x, y: t.y, w: t.w, h: t.h };
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -98,7 +102,9 @@ export function DashboardGrid({ tiles, storageKey = "tomon-grid-layout" }: Props
     for (const el of items) {
       const id = el.getAttribute("gs-id");
       if (!id || knownRef.current.has(id)) continue;
-      const geom = savedRef.current[id] ?? { ...defaultsRef.current[id], autoPosition: true };
+      const def = defaultsRef.current[id] ?? {};
+      const hasPos = def.x != null && def.y != null;
+      const geom = savedRef.current[id] ?? (hasPos ? def : { ...def, autoPosition: true });
       grid.makeWidget(el, { id, ...geom });
       knownRef.current.add(id);
     }

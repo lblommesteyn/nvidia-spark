@@ -112,6 +112,8 @@ export function App() {
   const tiles: GridTile[] = [
     {
       id: "agent",
+      x: 0,
+      y: 0,
       w: 12,
       h: 5,
       content: selected ? (
@@ -132,6 +134,8 @@ export function App() {
     },
     {
       id: "livetv",
+      x: 0,
+      y: 5,
       w: 7,
       h: 6,
       content: (
@@ -146,6 +150,8 @@ export function App() {
     },
     {
       id: "flow",
+      x: 7,
+      y: 5,
       w: 5,
       h: 6,
       content: (
@@ -173,6 +179,8 @@ export function App() {
     },
     {
       id: "events",
+      x: 0,
+      y: 11,
       w: 6,
       h: 5,
       content: (
@@ -204,6 +212,8 @@ export function App() {
     },
     {
       id: "sources",
+      x: 6,
+      y: 11,
       w: 6,
       h: 5,
       content: (
@@ -231,6 +241,8 @@ export function App() {
     },
     {
       id: "weather",
+      x: 0,
+      y: 16,
       w: 3,
       h: 3,
       content: (
@@ -254,6 +266,8 @@ export function App() {
     },
     {
       id: "airquality",
+      x: 3,
+      y: 16,
       w: 3,
       h: 3,
       content: (
@@ -275,8 +289,10 @@ export function App() {
         </Panel>
       ),
     },
-    ...otherCivic.map<GridTile>((g) => ({
+    ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
+      x: (i % 3) * 4,
+      y: 19 + Math.floor(i / 3) * 4,
       w: 4,
       h: 4,
       content: (

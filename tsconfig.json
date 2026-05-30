@@ -17,5 +17,11 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "exclude": [
+    "src/main.ts",
+    "src/mapTiles.ts",
+    "src/particleHero.ts",
+    "src/silhouettes.ts"
+  ]
 }

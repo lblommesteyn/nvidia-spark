@@ -14,6 +14,13 @@ import { activeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
 
+// Load .env (Node ≥20.6 / 24). No-op if the file is absent — keys stay optional.
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env present; sources fall back to keyless/demo modes
+}
+
 const app = new Hono();
 app.use("/api/*", cors());
 
