@@ -893,3 +893,106 @@ body.terminal-open {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.agent-flow {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 36px;
+}
+
+.agent-flow article {
+  position: relative;
+  min-height: 236px;
+  padding: 16px;
+  border-top: 3px solid rgba(126, 255, 194, 0.34);
+}
+
+.agent-flow article::after {
+  position: absolute;
+  right: -10px;
+  top: 30px;
+  z-index: 2;
+  width: 20px;
+  height: 1px;
+  background: var(--mint);
+  content: "";
+}
+
+.agent-flow article:last-child::after {
+  display: none;
+}
+
+.agent-flow span,
+.recommendation-grid header span,
+.nvidia-band dt {
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-flow strong {
+  margin-top: 16px;
+  font-size: 18px;
+}
+
+.agent-flow p {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 36px;
+}
+
+.recommendation-grid article {
+  display: grid;
+  gap: 16px;
+  min-height: 360px;
+  padding: 18px;
+  border-left: 3px solid rgba(126, 255, 194, 0.36);
+}
+
+.recommendation-grid header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.recommendation-grid header strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.recommendation-grid h3 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.08;
+}
+
+.recommendation-grid p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.recommendation-grid footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: end;
+  gap: 8px;
+}
+
+.recommendation-grid footer span {
+  padding: 6px 8px;
+  color: #c9ffe4;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+}
