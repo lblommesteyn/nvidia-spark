@@ -6,3 +6,4 @@ dist
 .env
 data/*.db
 data/*.db-*
+data/*.jsonl

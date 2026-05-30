@@ -10,6 +10,7 @@
     "dev:all": "concurrently -n web,api -c cyan,magenta \"npm:dev\" \"npm:dev:server\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "gen:dataset": "tsx scripts/gen-forecast-dataset.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {

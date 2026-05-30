@@ -10,6 +10,7 @@ import { computeFlow } from "./sources/neighbourhoods.ts";
 import { getTraffic } from "./sources/traffic.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
 import { forecastForBusiness, forecastForPoint } from "./ai/forecast.ts";
+import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
 import { activeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
@@ -155,6 +156,30 @@ app.get("/api/forecast", async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "forecast error" }, 500);
   }
+});
+
+// ---- Fine-tuning dataset preview (context snapshots → JSONL training rows) ----
+// Generates a small sample of training examples on the fly so the fine-tuning
+// pipeline is demoable from the API. The full dataset is built via
+// `npm run gen:dataset` (scripts/gen-forecast-dataset.ts).
+app.get("/api/forecast/dataset", async (c) => {
+  const n = Math.min(Number(c.req.query("n") ?? 3), SAMPLE_LOCATIONS.length);
+  const format = (c.req.query("format") === "prompt" ? "prompt" : "messages") as "messages" | "prompt";
+  const radiusM = Number(c.req.query("radius") ?? 750);
+  const picks = SAMPLE_LOCATIONS.slice(0, n);
+  const examples = await Promise.all(
+    picks.map((loc) => exampleForPoint(loc.point, { radiusM, businessType: loc.businessType })),
+  );
+  if (c.req.query("jsonl") === "1") {
+    return c.text(toJsonl(examples, format) + "\n", 200, { "content-type": "application/jsonl" });
+  }
+  return c.json({
+    provider: activeProvider(),
+    count: examples.length,
+    format,
+    labelledBy: examples[0]?.meta.label ?? "heuristic",
+    examples,
+  });
 });
 
 // ---- Businesses CRUD ----

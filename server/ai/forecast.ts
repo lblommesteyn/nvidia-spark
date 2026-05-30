@@ -266,7 +266,7 @@ function defaultActions(level: DemandLevel, drivers: ForecastDriver[]): string[]
   return actions;
 }
 
-function buildHeuristic(ctx: LocationContext): Omit<DemandForecast, "provider" | "model" | "contextUsed"> {
+export function buildHeuristic(ctx: LocationContext): Omit<DemandForecast, "provider" | "model" | "contextUsed"> {
   const { score, drivers, windows } = heuristicForecast(ctx);
   const level = levelFromScore(score);
   const top = drivers[0]?.signal ?? "current conditions";
@@ -312,7 +312,7 @@ export function signalDigest(ctx: LocationContext): Record<string, unknown> {
   };
 }
 
-function llmPrompt(ctx: LocationContext, business?: BusinessProfile): string {
+export function llmPrompt(ctx: LocationContext, business?: BusinessProfile): string {
   const digest = signalDigest(ctx);
   const who = business
     ? `${business.name}, a ${business.businessType} (${business.headcount} staff) at ${business.address}${business.neighbourhood ? `, ${business.neighbourhood}` : ""}.`
