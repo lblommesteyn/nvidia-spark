@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "gen:dataset": "tsx scripts/gen-forecast-dataset.ts",
     "snapshot": "tsx scripts/snapshot-logger.ts",
+    "backfill": "tsx scripts/backfill_snapshots.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {
