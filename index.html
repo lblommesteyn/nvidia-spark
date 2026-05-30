@@ -3,9 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="CityFlow monitors Toronto city signals and recommends operational actions for small businesses." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23020403'/%3E%3Cpath d='M12 42C24 48 40 48 52 42' fill='none' stroke='%237effc2' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='24' r='5' fill='%2344a8ff'/%3E%3Ccircle cx='32' cy='20' r='5' fill='%237effc2'/%3E%3Ccircle cx='48' cy='28' r='5' fill='%23ffb940'/%3E%3C/svg%3E" />
     <title>CityFlow</title>
   </head>
   <body>
+    <a class="skip-link" href="#problem">Skip to content</a>
+    <div id="boot" class="boot-terminal" aria-live="polite">
+      <section class="boot-window" aria-label="CityFlow boot sequence">
+        <header><span>CITYFLOW LOCAL RUNTIME</span><span>TORONTO / DGX-SPARK</span></header>
+        <div class="boot-body">
+          <div class="boot-log">
+            <p>&gt; loading city_signal_kernel</p>
+            <p>&gt; rasterizing toronto silhouettes</p>
+            <p>&gt; preparing persistent gpu particle cloud</p>
+            <p>&gt; mounting local inference terminal</p>
+          </div>
+          <div class="boot-map" data-toronto-map="boot" aria-label="Toronto map preview"></div>
+        </div>
+      </section>
+    </div>
     <main id="app"></main>
     <script type="module" src="/src/main.ts"></script>
   </body>
