@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { GridStack, type GridStackNode, type GridStackWidget } from "gridstack";
 import "gridstack/dist/gridstack.min.css";
@@ -111,6 +111,27 @@ export function DashboardGrid({ tiles, storageKey = "tomon-grid-layout" }: Props
     grid.batchUpdate(false);
   });
 
+  // Reset-to-defaults handled in place (no full-page reload / white flash).
+  useEffect(() => {
+    const onReset = () => {
+      const grid = gridRef.current;
+      if (!grid) return;
+      localStorage.removeItem(storageKey);
+      savedRef.current = {};
+      grid.batchUpdate();
+      for (const n of grid.engine.nodes as GridStackNode[]) {
+        if (!n.id || !n.el) continue;
+        const def = defaultsRef.current[String(n.id)];
+        if (!def) continue;
+        const hasPos = def.x != null && def.y != null;
+        grid.update(n.el, hasPos ? def : { ...def, autoPosition: true });
+      }
+      grid.batchUpdate(false);
+    };
+    window.addEventListener("tomon:reset-layout", onReset);
+    return () => window.removeEventListener("tomon:reset-layout", onReset);
+  }, [storageKey]);
+
   return (
     <div ref={hostRef} class="grid-stack dashboard-grid">
       {tiles.map((t) => (
@@ -122,8 +143,8 @@ export function DashboardGrid({ tiles, storageKey = "tomon-grid-layout" }: Props
   );
 }
 
-/** Clear the saved layout and reload to defaults. */
+/** Clear the saved layout and snap tiles back to defaults in place (no reload). */
 export function resetDashboardLayout(storageKey = "tomon-grid-layout") {
   localStorage.removeItem(storageKey);
-  location.reload();
+  window.dispatchEvent(new CustomEvent("tomon:reset-layout"));
 }
