@@ -996,3 +996,71 @@ body.terminal-open {
   font-family: var(--mono);
   font-size: 11px;
 }
+
+.nvidia-band {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 36px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.nvidia-band dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.nvidia-band dl div {
+  padding: 18px;
+  border-left: 3px solid rgba(126, 255, 194, 0.36);
+}
+
+.nvidia-band dd {
+  margin: 8px 0 0;
+  font-size: 20px;
+}
+
+.footer-cta {
+  display: grid;
+  justify-items: center;
+  padding: 110px 0 72px;
+  text-align: center;
+}
+
+.footer-cta h2 {
+  max-width: 760px;
+}
+
+.footer-cta .terminal-button {
+  margin-top: 28px;
+}
+
+.footer-cta .terminal-button + .terminal-button {
+  margin-left: 10px;
+}
+
+.terminal-app {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(1, 4, 3, 0.9);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease;
+  visibility: hidden;
+}
+
+.terminal-app[aria-hidden="false"] {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
