@@ -220,7 +220,7 @@ async function* ollamaNativeStream(
   options: Record<string, unknown>,
 ): AsyncGenerator<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
+  const timer = setTimeout(() => controller.abort(), 45_000);
   const stripper = makeThinkStripper();
   try {
     const res = await fetch(`${host}/api/chat`, {
@@ -345,7 +345,7 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
     `${base}/chat/completions`,
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 25_000,
       headers,
       body: JSON.stringify({
         model,
@@ -420,7 +420,7 @@ async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
     `${host}/api/chat`,
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 25_000,
       body: JSON.stringify({ model, messages: msgs, stream: false, options }),
     },
   );

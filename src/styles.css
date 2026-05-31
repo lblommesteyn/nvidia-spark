@@ -2008,6 +2008,45 @@ body.lp-visible #particle-canvas {
   height: 100%;
 }
 
+/* Honest fallback shown when the basemap CDN can't be reached. */
+.map-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 35%, #14202e 0%, #0b0f17 70%);
+  border: 1px solid var(--border, #233);
+}
+.map-fallback-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #0b0f17;
+  background: #3fb950;
+}
+.map-fallback-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e9eef5;
+}
+.map-fallback-sub {
+  max-width: 360px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim, #8b98a8);
+}
+
 /* 2D / 3D view toggle (top-right of the map, under the zoom control) */
 .map-view-toggle {
   position: absolute;

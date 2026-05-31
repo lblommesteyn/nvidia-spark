@@ -18,7 +18,7 @@ const LAYER_META: { key: LayerKey; label: string }[] = [
   { key: "flow", label: "Flow areas" },
   { key: "traffic", label: "Traffic" },
   { key: "routes", label: "Transit lines (TTC · GO)" },
-  { key: "gotrains", label: "GO Trains (live)" },
+  { key: "gotrains", label: "GO Trains (simulated)" },
   { key: "construction", label: "Construction" },
   { key: "bikeshare", label: "Bike share" },
   { key: "transit", label: "TTC vehicles" },
@@ -30,6 +30,7 @@ export function TorontoMap({ home }: Props) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const homeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [ready, setReady] = useState(false);
+  const [mapError, setMapError] = useState(false);
   const [tilted, setTilted] = useState(true);
   const [visible, setVisible] = useState<Record<LayerKey, boolean>>({
     flow: true,
@@ -86,6 +87,22 @@ export function TorontoMap({ home }: Props) {
     const rafId = requestAnimationFrame(() => requestAnimationFrame(kick));
     // Cover the 180ms reveal transition + late layout settle.
     const kickTimers = [120, 300, 600, 1000].map((ms) => window.setTimeout(kick, ms));
+
+    // Basemap watchdog: the basemap style/tiles are fetched from the public
+    // OpenFreeMap CDN, so a flaky network at the venue can leave a black canvas
+    // with no "load" event ever firing. If we don't reach `load` within 9s,
+    // surface a visible, honest fallback instead of an unexplained black box.
+    const watchdog = window.setTimeout(() => {
+      if (!mapRef.current?.isStyleLoaded()) setMapError(true);
+    }, 9000);
+
+    // MapLibre emits "error" for style + tile failures. A failed *style* load is
+    // fatal (no basemap); individual tile errors are tolerable. Only trip the
+    // fallback when the style itself failed to load.
+    map.on("error", (e) => {
+      const msg = String((e as { error?: { message?: string } }).error?.message ?? "");
+      if (!map.isStyleLoaded() && /style|sprite|glyph/i.test(msg)) setMapError(true);
+    });
 
 
     map.on("load", async () => {
@@ -457,6 +474,8 @@ export function TorontoMap({ home }: Props) {
       }
 
       setReady(true);
+      setMapError(false);
+      window.clearTimeout(watchdog);
       // Ensure the canvas matches the now-laid-out container.
       map.resize();
     });
@@ -465,6 +484,7 @@ export function TorontoMap({ home }: Props) {
       ro.disconnect();
       cancelAnimationFrame(rafId);
       for (const t of kickTimers) clearTimeout(t);
+      window.clearTimeout(watchdog);
       map.remove();
       mapRef.current = null;
     };
@@ -575,6 +595,16 @@ export function TorontoMap({ home }: Props) {
   return (
     <div class="map-wrap">
       <div ref={containerRef} class="map" />
+      {mapError && (
+        <div class="map-fallback">
+          <div class="map-fallback-mark">TO</div>
+          <div class="map-fallback-title">Basemap unavailable</div>
+          <div class="map-fallback-sub">
+            The map tiles couldn't be reached — every data feed and the agent
+            below are still live. Check the network and reload to restore the map.
+          </div>
+        </div>
+      )}
       <button
         type="button"
         class="map-view-toggle"

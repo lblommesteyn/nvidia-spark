@@ -143,8 +143,20 @@ app.get("/api/map/geo", async (c) => {
 
 /** Neighbourhood "flow" choropleth — aggregated demand/activity per area. */
 app.get("/api/flow", async (c) => {
-  const records = await loadAllRecords();
-  return c.json(await computeFlow(records));
+  try {
+    const records = await loadAllRecords();
+    return c.json(await computeFlow(records));
+  } catch (err) {
+    // The flow model depends on the neighbourhood-boundary dataset (CKAN), which
+    // can hiccup. Never 500 the choropleth — return an empty collection so the
+    // map + tile degrade gracefully instead of breaking the dashboard.
+    console.warn("[flow] degraded to empty:", err instanceof Error ? err.message : err);
+    return c.json({
+      type: "FeatureCollection",
+      generatedAt: new Date().toISOString(),
+      features: [],
+    });
+  }
 });
 
 /** Live traffic congestion (red/amber/green road traces). */
@@ -546,9 +558,14 @@ app.get("/api/patterns", async (c) => {
   const n = Math.min(Number(c.req.query("n") ?? 12), 50);
   const businessId = c.req.query("businessId");
   const radiusM = Number(c.req.query("radius") ?? 750);
-  const ctx = businessId
-    ? await buildContext(scopeFromBusiness(businesses.get(businessId)!, radiusM))
-    : await buildContext({ point: p, radiusM });
+  let ctx;
+  if (businessId) {
+    const b = businesses.get(businessId);
+    if (!b) return c.json({ error: "business not found" }, 404);
+    ctx = await buildContext(scopeFromBusiness(b, radiusM));
+  } else {
+    ctx = await buildContext({ point: p, radiusM });
+  }
   return c.json({
     total: snapshots.count(),
     moments: findSimilarMoments(ctx, n),
