@@ -2749,6 +2749,51 @@ body.lp-visible #particle-canvas {
   color: var(--green);
 }
 
+/* ---- Inline mic button (single click-to-record / click-to-stop) ---- */
+.chat-mic {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.chat-mic:hover:not(:disabled) {
+  color: var(--green);
+  border-color: var(--green);
+}
+.chat-mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chat-mic.is-recording {
+  color: #fff;
+  background: #e5484d;
+  border-color: #e5484d;
+  animation: pulse-rec 1.3s ease-in-out infinite;
+}
+.chat-mic.is-transcribing {
+  color: var(--green);
+  border-color: var(--green);
+}
+.mic-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: mic-spin 0.7s linear infinite;
+}
+@keyframes mic-spin {
+  to { transform: rotate(360deg); }
+}
+
 .chat-mic-btn.is-recording {
   color: #f44;
   border-color: #f44;
@@ -2756,13 +2801,17 @@ body.lp-visible #particle-canvas {
 }
 
 @keyframes pulse-rec {
-  50% { opacity: 0.55; }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(229, 72, 77, 0.18); }
 }
 
 .chat-voice-status {
   font-size: 11px;
 }
 
+.chat-voice-note {
+  padding: 0 12px 8px;
+  font-size: 11px;
+}
 .chat-voice-err {
   font-size: 11px;
   color: #f88;
@@ -2770,6 +2819,7 @@ body.lp-visible #particle-canvas {
 
 .chat-input {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 8px;
   border-top: 1px solid var(--border);

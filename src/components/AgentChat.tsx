@@ -110,7 +110,6 @@ export function AgentChat({ business }: { business: Business }) {
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
   const streamBuf    = useRef("");
-  const [voiceOn, setVoiceOn]       = useState(false);
   const [asrReady, setAsrReady]     = useState(false);
   const [asrStatus, setAsrStatus]   = useState("");
   const [recording, setRecording]   = useState(false);
@@ -225,7 +224,8 @@ export function AgentChat({ business }: { business: Business }) {
 
   function handleSubmit(e: Event) {
     e.preventDefault();
-    if (voiceOn && recording) {
+    if (recording) {
+      // Mic is live — stop & transcribe instead of submitting empty input.
       mediaRecorder.current?.stop();
       return;
     }
@@ -446,49 +446,66 @@ export function AgentChat({ business }: { business: Business }) {
         ))}
       </div>
 
-      <div class="chat-voice-bar">
+      <form class="chat-input" onSubmit={handleSubmit}>
         <button
           type="button"
-          class={`chip-btn chat-voice-toggle${voiceOn ? " is-active" : ""}`}
-          onClick={() => { setVoiceOn((v) => !v); setVoiceErr(null); }}
-          title="Speak → Parakeet transcribes → Nemotron answers"
+          class={`chat-mic${recording ? " is-recording" : ""}${transcribing ? " is-transcribing" : ""}`}
+          onClick={toggleRecording}
+          disabled={busy || transcribing || !asrReady}
+          title={
+            !asrReady
+              ? (asrStatus || "Voice input offline")
+              : transcribing
+                ? "Transcribing…"
+                : recording
+                  ? "Stop & transcribe"
+                  : "Record a question (Parakeet on NVIDIA)"
+          }
+          aria-label={recording ? "Stop recording" : "Start voice input"}
         >
-          {voiceOn ? "Voice on" : "Voice (Parakeet)"}
+          {transcribing ? (
+            <span class="mic-spinner" aria-hidden="true" />
+          ) : recording ? (
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+              <line x1="8" y1="22" x2="16" y2="22" />
+            </svg>
+          )}
         </button>
-        {voiceOn && (
-          <button
-            type="button"
-            class={`btn-ghost chat-mic-btn${recording ? " is-recording" : ""}`}
-            onClick={toggleRecording}
-            disabled={busy || transcribing}
-            title={recording ? "Stop and transcribe" : "Record question"}
-          >
-            {transcribing ? "Transcribing…" : recording ? "Stop" : "Mic"}
-          </button>
-        )}
-        <span class="chat-voice-status muted">{asrStatus || (asrReady ? "ASR ready" : "Checking ASR…")}</span>
-        {voiceErr && <span class="chat-voice-err muted">{voiceErr}</span>}
-      </div>
-
-      <form class="chat-input" onSubmit={handleSubmit}>
         <input
           value={input}
           onInput={(e) => setInput((e.target as HTMLInputElement).value)}
           placeholder={
-            voiceOn
-              ? (recording ? "Listening… click Stop or Send when done" : "Speak with Mic, or type — Send transcribes & asks Nemotron")
-              : (hasData ? "Ask about staffing, revenue patterns, city conditions…" : "Ask about city conditions around your business…")
+            recording
+              ? "Listening… click the mic to stop"
+              : transcribing
+                ? "Transcribing your question…"
+                : (hasData ? "Ask about staffing, revenue patterns, city conditions…" : "Ask about city conditions around your business…")
           }
-          disabled={busy || transcribing}
+          disabled={busy || transcribing || recording}
         />
         <button
           type="submit"
           class="btn-primary"
-          disabled={busy || transcribing || (voiceOn ? recording : !input.trim())}
+          disabled={busy || transcribing || recording || !input.trim()}
         >
           {transcribing ? "…" : "Send"}
         </button>
       </form>
+      {(voiceErr || (!asrReady && asrStatus)) && (
+        <div class="chat-voice-note">
+          {voiceErr
+            ? <span class="chat-voice-err">{voiceErr}</span>
+            : <span class="muted">{asrStatus}</span>}
+        </div>
+      )}
     </section>
   );
 }
