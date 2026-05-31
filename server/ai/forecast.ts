@@ -15,6 +15,7 @@ import { activeProvider, chat } from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { getWeatherForecast, type WeatherHour } from "../sources/environment.ts";
 import { businesses } from "../db.ts";
+import { mlWeeklyProfile, mlScoreFromGrid } from "./mlforecast.ts";
 import type { BusinessProfile, CivicRecord, GeoPoint } from "../types.ts";
 
 export type DemandLevel = "low" | "moderate" | "elevated" | "surge";
@@ -37,6 +38,8 @@ export interface DemandForecast {
   model: string;
   /** "heuristic" when computed locally, "llm" when reasoned by the model. */
   method: "heuristic" | "llm";
+  /** Whether the ML service contributed to this forecast. */
+  mlPowered?: boolean;
   horizonHours: number;
   level: DemandLevel;
   /** 0..1 normalized demand pressure. */
@@ -417,8 +420,43 @@ async function forecastFromContext(
   };
   const provider = activeProvider();
 
+  // Blend ML prediction into heuristic score when a business type is known.
+  let mlPowered = false;
+  const businessType = business?.businessType ?? ctx.scope.businessType;
+  if (businessType) {
+    const wxDesc = (ctx.weather.data as { description?: string } | undefined)?.description ?? "clear";
+    const wetWx = /rain|drizzle|snow|storm|shower/i.test(wxDesc) ? "rain" : "clear";
+    const hasEvent = ctx.civic.filter((g) => g.category === "event").some((g) => g.nearby.length > 0);
+    const transitDisruption = ctx.civic
+      .filter((g) => g.category === "transit")
+      .reduce((n, g) => n + g.nearby.length, 0) === 0;
+    const mlProfile = await mlWeeklyProfile(businessType, {
+      weather: wetWx,
+      event: hasEvent,
+      disruption: transitDisruption,
+    });
+    if (mlProfile) {
+      const torontoHour = Number(
+        new Intl.DateTimeFormat("en-CA", { hour: "numeric", hour12: false, timeZone: "America/Toronto" }).format(new Date()),
+      );
+      // dow: JS getDay() is Sun=0; ML dow is Mon=0 — convert
+      const jsDay = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(new Date())).getDay();
+      const mlDow = (jsDay + 6) % 7; // Sun(0)->6, Mon(1)->0, ...
+      const mlScore = mlScoreFromGrid(mlProfile.grid, torontoHour, mlDow);
+      // Blend: 60% heuristic (has local civic context), 40% ML (has business-type rhythm)
+      base.score = clamp01(base.score * 0.6 + mlScore * 0.4);
+      base.level = levelFromScore(base.score);
+      mlPowered = true;
+      base.drivers.push({
+        signal: "ML demand model",
+        impact: mlScore > 0.5 ? "up" : "down",
+        detail: `CityFlow ML (${mlProfile.archetype} archetype, ${mlProfile.model}) predicts ${Math.round(mlScore * 100)}% of peak demand at this hour.`,
+      });
+    }
+  }
+
   if (provider === "mock") {
-    return { ...base, provider, model: "rule-based", contextUsed };
+    return { ...base, provider, model: "rule-based", mlPowered, contextUsed };
   }
 
   // Real provider available — ask it to reason, but never trust it blindly.
@@ -441,6 +479,7 @@ async function forecastFromContext(
         model: result.model,
         score: Number(score.toFixed(2)),
         level,
+        mlPowered,
         headline: parsed.headline ?? base.headline,
         drivers: Array.isArray(parsed.drivers) && parsed.drivers.length ? parsed.drivers : base.drivers,
         windows: Array.isArray(parsed.windows) && parsed.windows.length ? parsed.windows : base.windows,
@@ -449,9 +488,9 @@ async function forecastFromContext(
       };
     }
     // Parse failed — heuristic but credit the provider that was tried.
-    return { ...base, provider: result.provider, model: result.model, contextUsed };
+    return { ...base, provider: result.provider, model: result.model, mlPowered, contextUsed };
   } catch {
-    return { ...base, provider, model: "fallback", contextUsed };
+    return { ...base, provider, model: "fallback", mlPowered, contextUsed };
   }
 }
 

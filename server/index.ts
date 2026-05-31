@@ -30,6 +30,7 @@ import {
   sseClientCount,
 } from "./ai/alerts.ts";
 import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
+import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
 
@@ -357,6 +358,39 @@ app.post("/api/businesses/:id/schedule", async (c) => {
   }));
   businessSchedule.upsertMany(rows);
   return c.json({ inserted: rows.length });
+});
+
+// ---- ML microservice proxy ----
+app.get("/api/ml/health", async (c) => {
+  const available = await mlAvailable();
+  return c.json({ available });
+});
+
+app.get("/api/ml/profile", async (c) => {
+  const type = c.req.query("type") ?? "cafe";
+  const weather = c.req.query("weather") ?? "clear";
+  const event = c.req.query("event") === "true";
+  const disruption = c.req.query("disruption") === "true";
+  const profile = await mlWeeklyProfile(type, { weather, event, disruption });
+  if (!profile) return c.json({ error: "ML service unavailable" }, 503);
+  return c.json(profile);
+});
+
+app.post("/api/ml/train", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const type = body?.type ?? "cafe";
+  resetMlAvailability();
+  try {
+    const res = await fetch("http://localhost:8788/train", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type, days: body?.days ?? 730 }),
+    });
+    if (!res.ok) return c.json({ error: "train failed" }, 502);
+    return c.json(await res.json());
+  } catch {
+    return c.json({ error: "ML service unavailable" }, 503);
+  }
 });
 
 // ---- Agent ----

@@ -185,7 +185,7 @@ export function App() {
           description="Next ~12h demand outlook plus a 7-day structural projection (forecasted weather, Ontario calendar/holidays, scheduled events, persistent transit/construction). Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
           updatedAt={forecast?.generatedAt}
           dataHref={`/api/forecast?${ctxQuery}`}
-          note={forecast ? `${forecast.method === "llm" ? "model-reasoned" : "heuristic"} · ${forecast.provider}/${forecast.model}` : undefined}
+          note={forecast ? `${forecast.method === "llm" ? "model-reasoned" : "heuristic"}${forecast.mlPowered ? " · ML" : ""} · ${forecast.provider}/${forecast.model}` : undefined}
         >
           {!forecast ? (
             <div class="muted">Computing forecast…</div>
@@ -206,6 +206,9 @@ export function App() {
                 </div>
                 <span class="muted">{Math.round(forecast.score * 100)}% pressure</span>
               </div>
+              {forecast.mlPowered && (
+                <span class="ml-badge" title="Blended with CityFlow gradient-boosting ML model">ML-powered</span>
+              )}
               <p class="forecast-headline">{forecast.headline}</p>
               {week && week.days.length > 0 && (
                 <div class="forecast-week">
