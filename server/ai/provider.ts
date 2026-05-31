@@ -86,9 +86,14 @@ export function describeProvider(): { provider: string; model: string } {
 export async function* chatStream(messages: ChatMessage[], opts: ChatOptions = {}): AsyncGenerator<string> {
   const provider = activeProvider();
   switch (provider) {
-    case "nemotron":
-      yield* nemotronStream(messages, opts);
+    case "nemotron": {
+      // This provider's OpenAI-compat /v1 SSE streaming is unreliable on some
+      // local servers (e.g. returns 404 for stream:true while non-streaming
+      // works fine). Do a single non-streaming call and yield the full answer.
+      const { text } = await nemotron(messages, opts);
+      yield text;
       return;
+    }
     case "openai":
       yield* openaiStream(messages, opts);
       return;
@@ -152,51 +157,6 @@ async function* openAISSE(
     }
   } finally {
     clearTimeout(timer);
-  }
-}
-
-async function* nemotronStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
-  const base = (process.env.NEMOTRON_BASE_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
-  const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
-  const msgs = withReasoningDirective(messages, opts);
-  const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
-  const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const payload = {
-    model,
-    messages: msgs,
-    temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 1024,
-    stream: true,
-  };
-  // Strip <think>…</think> reasoning traces incrementally across chunk boundaries.
-  const stripper = makeThinkStripper();
-  let emitted = 0;
-  let v1Err: unknown = null;
-  try {
-    for await (const raw of openAISSE(`${base}/chat/completions`, headers, payload, 120_000)) {
-      const clean = stripper.push(raw);
-      if (clean) {
-        emitted += clean.length;
-        yield clean;
-      }
-    }
-    const tail = stripper.flush();
-    if (tail) {
-      emitted += tail.length;
-      yield tail;
-    }
-  } catch (err) {
-    v1Err = err;
-  }
-  // Self-healing: the OpenAI-compat /v1 SSE is flaky on some Ollama builds and
-  // can yield nothing. If so, retry the SAME host over Ollama's native
-  // /api/chat (derive the host by stripping a trailing /v1), which streams
-  // reliably. A real NIM endpoint won't hit this path because /v1 works there.
-  if (emitted === 0) {
-    const nativeHost = base.replace(/\/v1$/, "");
-    console.warn(`[nemotron] /v1 stream produced nothing${v1Err ? ` (${v1Err instanceof Error ? v1Err.message : String(v1Err)})` : ""}; falling back to ${nativeHost}/api/chat`);
-    yield* ollamaNativeStream(nativeHost, model, msgs, ollamaOptions(opts));
   }
 }
 
@@ -371,42 +331,21 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
   const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  let raw = "";
-  try {
-    const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
-      `${base}/chat/completions`,
-      {
-        method: "POST",
-        timeoutMs: 120_000,
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: msgs,
-          temperature: opts.temperature ?? 0.3,
-          max_tokens: opts.maxTokens ?? 1024,
-        }),
-      },
-    );
-    raw = res.choices[0]?.message?.content ?? "";
-  } catch (err) {
-    console.warn(`[nemotron] /v1 chat failed (${err instanceof Error ? err.message : String(err)}); falling back to native /api/chat`);
-  }
-
-  // Self-healing: if /v1 returned nothing (flaky on some Ollama builds), retry
-  // the same host over Ollama's native /api/chat.
-  if (!raw.trim()) {
-    const nativeHost = base.replace(/\/v1$/, "");
-    const r = await fetchJson<{ message: { content: string } }>(
-      `${nativeHost}/api/chat`,
-      {
-        method: "POST",
-        timeoutMs: 120_000,
-        body: JSON.stringify({ model, messages: msgs, stream: false, options: ollamaOptions(opts) }),
-      },
-    );
-    raw = r.message?.content ?? "";
-  }
-
+  const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
+    `${base}/chat/completions`,
+    {
+      method: "POST",
+      timeoutMs: 120_000,
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: msgs,
+        temperature: opts.temperature ?? 0.3,
+        max_tokens: opts.maxTokens ?? 1024,
+      }),
+    },
+  );
+  const raw = res.choices[0]?.message?.content ?? "";
   const text = stripThink(raw);
   return { text: text || raw.trim(), provider: "nemotron", model };
 }
