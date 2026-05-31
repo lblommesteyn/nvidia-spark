@@ -54,7 +54,7 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
     case "anthropic":
       return anthropic(messages, opts);
     case "ollama":
-      return ollama(messages);
+      return ollama(messages, opts);
     default:
       return mock(messages);
   }
@@ -93,7 +93,7 @@ export async function* chatStream(messages: ChatMessage[], opts: ChatOptions = {
       yield* openaiStream(messages, opts);
       return;
     case "ollama":
-      yield* ollamaStream(messages);
+      yield* ollamaStream(messages, opts);
       return;
     case "anthropic": {
       // Anthropic uses a different SSE schema; keep it simple and non-streamed.
@@ -197,16 +197,29 @@ async function* openaiStream(messages: ChatMessage[], opts: ChatOptions): AsyncG
   yield* openAISSE("https://api.openai.com/v1/chat/completions", headers, payload, 60_000);
 }
 
-async function* ollamaStream(messages: ChatMessage[]): AsyncGenerator<string> {
+/** Prepend Nemotron's `detailed thinking on|off` directive when reasoning is set. */
+function withReasoningDirective(messages: ChatMessage[], opts: ChatOptions): ChatMessage[] {
+  if (opts.reasoning === undefined) return messages;
+  const directive = `detailed thinking ${opts.reasoning ? "on" : "off"}`;
+  return [{ role: "system" as const, content: directive }, ...messages];
+}
+
+async function* ollamaStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
   const host = process.env.OLLAMA_HOST ?? "http://localhost:11434";
   const model = process.env.OLLAMA_MODEL ?? "llama3.1";
+  const msgs = withReasoningDirective(messages, opts);
+  const options: Record<string, unknown> = { temperature: opts.temperature ?? 0.3 };
+  if (opts.maxTokens) options.num_predict = opts.maxTokens;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120_000);
+  // nemotron-3-nano (and other reasoning models on Ollama) emit <think>…</think>
+  // traces inline; strip them incrementally just like the NIM path.
+  const stripper = makeThinkStripper();
   try {
     const res = await fetch(`${host}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({ model, messages: msgs, stream: true, options }),
       signal: controller.signal,
     });
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} (stream)`);
@@ -225,13 +238,18 @@ async function* ollamaStream(messages: ChatMessage[]): AsyncGenerator<string> {
         if (!line) continue;
         try {
           const json = JSON.parse(line);
-          const delta = json.message?.content ?? "";
-          if (delta) yield delta as string;
+          const raw = json.message?.content ?? "";
+          if (raw) {
+            const clean = stripper.push(raw as string);
+            if (clean) yield clean;
+          }
         } catch {
           /* partial line — ignore */
         }
       }
     }
+    const tail = stripper.flush();
+    if (tail) yield tail;
   } finally {
     clearTimeout(timer);
   }
@@ -398,18 +416,23 @@ async function anthropic(messages: ChatMessage[], opts: ChatOptions): Promise<Ch
   return { text: res.content[0]?.text ?? "", provider: "anthropic", model };
 }
 
-async function ollama(messages: ChatMessage[]): Promise<ChatResult> {
+async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
   const host = process.env.OLLAMA_HOST ?? "http://localhost:11434";
   const model = process.env.OLLAMA_MODEL ?? "llama3.1";
+  const msgs = withReasoningDirective(messages, opts);
+  const options: Record<string, unknown> = { temperature: opts.temperature ?? 0.3 };
+  if (opts.maxTokens) options.num_predict = opts.maxTokens;
   const res = await fetchJson<{ message: { content: string } }>(
     `${host}/api/chat`,
     {
       method: "POST",
       timeoutMs: 120_000,
-      body: JSON.stringify({ model, messages, stream: false }),
+      body: JSON.stringify({ model, messages: msgs, stream: false, options }),
     },
   );
-  return { text: res.message?.content ?? "", provider: "ollama", model };
+  const raw = res.message?.content ?? "";
+  const text = stripThink(raw);
+  return { text: text || raw.trim(), provider: "ollama", model };
 }
 
 /**
