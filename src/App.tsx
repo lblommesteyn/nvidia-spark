@@ -57,6 +57,30 @@ const SIGNAL_LABEL: Record<string, string> = {
   events: "events",
 };
 
+/**
+ * Honest, branded label for the active intelligence stack. The CityFlow
+ * gradient-boosting demand model is always part of the stack; the LLM half
+ * varies by provider, so the local-GPU path proudly names Nemotron while the
+ * no-key path stays truthful ("Demo mode").
+ */
+function engineLabel(provider: string): string {
+  switch (provider) {
+    case "nemotron":
+    case "ollama":
+      return "Nemotron + CityFlow gradient-boosting demand model";
+    case "openai":
+      return "OpenAI + CityFlow gradient-boosting demand model";
+    case "anthropic":
+      return "Claude + CityFlow gradient-boosting demand model";
+    case "offline":
+      return "offline";
+    case "…":
+      return "connecting…";
+    default: // mock / no key wired
+      return "Demo mode + CityFlow gradient-boosting demand model";
+  }
+}
+
 export function App() {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(localStorage.getItem(LS_KEY));
@@ -497,8 +521,9 @@ export function App() {
         </div>
 
         <div class="topbar-controls">
-          <span class={`provider-badge provider-${provider}`} title="Active LLM provider">
-            agent: {provider}
+          <span class={`provider-badge provider-${provider}`} title={`Active intelligence stack — LLM provider: ${provider}`}>
+            <i class="provider-dot" />
+            {engineLabel(provider)}
           </span>
           {businesses.length > 0 && (
             <select
@@ -521,7 +546,11 @@ export function App() {
       </header>
 
       <div class="main-content">
-        {/* ---- Map ---- */}
+        {/* Slim helper bar above the map so it stays clear of the tiles that
+            scroll up over the map. */}
+        <div class="grid-hint">Drag tiles by their header · resize from the edges · <button class="linklike" onClick={() => resetDashboardLayout()}>reset layout</button></div>
+
+        {/* ---- Map (tall, sticky hero — tiles scroll up over it) ---- */}
         <div class="map-section">
           <TorontoMap
             home={selected ? { lon: selected.lon, lat: selected.lat, label: selected.name } : null}
@@ -538,7 +567,6 @@ export function App() {
         </div>
 
         {/* ---- Panels (drag to reorder, resize from edges) ---- */}
-        <div class="grid-hint">Drag tiles by their header · resize from the edges · <button class="linklike" onClick={() => resetDashboardLayout()}>reset</button></div>
         <DashboardGrid tiles={tiles} />
       </div>
 
