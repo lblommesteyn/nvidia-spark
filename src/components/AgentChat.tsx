@@ -106,9 +106,10 @@ export function AgentChat({ business }: { business: Business }) {
   const [manageOpen, setManageOpen]       = useState(false);
   const [genBusy, setGenBusy]       = useState(false);
   const [genMsg, setGenMsg]         = useState<string | null>(null);
-  const scrollRef  = useRef<HTMLDivElement>(null);
-  const histRef    = useRef<HTMLInputElement>(null);
-  const schedRef   = useRef<HTMLInputElement>(null);
+  const scrollRef    = useRef<HTMLDivElement>(null);
+  const histRef      = useRef<HTMLInputElement>(null);
+  const schedRef     = useRef<HTMLInputElement>(null);
+  const streamBuf    = useRef("");
 
   const hasData = summary && summary.totalDays > 0;
 
@@ -130,31 +131,42 @@ export function AgentChat({ business }: { business: Business }) {
   async function ask(question: string) {
     if (!question.trim() || busy) return;
     setInput("");
+    streamBuf.current = "";
     setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
     setBusy(true);
 
-    // All updates target the single in-flight streaming agent message.
-    const patch = (fn: (msg: Msg) => Msg) =>
-      setMessages((m) => m.map((msg) => (msg.streaming ? fn(msg) : msg)));
     const scrollDown = () =>
       requestAnimationFrame(() => scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight));
+
+    // Use a ref to accumulate text so each setMessages call reads the full
+    // accumulated string — avoids stale-closure bugs when Preact batches
+    // rapid-fire functional state updates from a buffered SSE flush.
+    const setStreamingMsg = (partial: Partial<Msg>) =>
+      setMessages((m) => m.map((msg) =>
+        msg.streaming ? { ...msg, ...partial } : msg,
+      ));
 
     try {
       await api.agentStream({ businessId: business.id, question }, (e) => {
         if (e.error) {
-          patch((msg) => ({ ...msg, text: `Error: ${e.error}`, streaming: false }));
+          setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
           return;
         }
-        if (e.provider) patch((msg) => ({ ...msg, provider: e.provider }));
+        if (e.provider) setStreamingMsg({ provider: e.provider });
         if (e.delta) {
-          patch((msg) => ({ ...msg, text: msg.text + e.delta }));
+          streamBuf.current += e.delta;
+          setStreamingMsg({ text: streamBuf.current });
           scrollDown();
         }
       });
     } catch (err) {
-      patch((msg) => ({ ...msg, text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false }));
+      setStreamingMsg({ text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false });
     } finally {
-      patch((msg) => ({ ...msg, streaming: false }));
+      // Commit the full accumulated text and clear the streaming flag in one update.
+      setMessages((m) => m.map((msg) =>
+        msg.streaming ? { ...msg, text: streamBuf.current || msg.text, streaming: false } : msg,
+      ));
+      streamBuf.current = "";
       setBusy(false);
       scrollDown();
     }
