@@ -2,6 +2,8 @@ import { buildContext, scopeFromBusiness, type LocationContext } from "./context
 import { chat, type ChatResult } from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businessHistoryBlock } from "./bizdata.ts";
+import { weekForecastForBusiness } from "./forecast.ts";
+import { getResearchBlock } from "./web-agent.ts";
 import { businesses, businessHistory, businessSchedule } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
@@ -14,7 +16,25 @@ export interface AgentAnswer extends ChatResult {
   };
 }
 
-function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHistoryBlock = ""): string {
+function weekForecastBlock(businessId: string, week: Awaited<ReturnType<typeof weekForecastForBusiness>>): string {
+  const dayLines = week.days
+    .slice(0, 7)
+    .map((d) => `  ${d.dayName} (${d.date}): peak ${d.peakWindow} [${d.peakLevel}], avg ${d.avgLevel}${d.events ? `, ${d.events} events` : ""}`);
+  return [
+    "<WEEK_FORECAST>",
+    week.headline,
+    ...dayLines,
+    `Basis: ${week.basis}`,
+    "</WEEK_FORECAST>",
+  ].join("\n");
+}
+
+function systemPrompt(
+  ctx: LocationContext,
+  business?: BusinessProfile,
+  bizHistoryBlock = "",
+  extras: { researchBlock?: string; weekBlock?: string } = {},
+): string {
   const profileBlock = business
     ? `<BUSINESS>${business.name} — a ${business.businessType} with ${business.headcount} staff at ${business.address}${business.neighbourhood ? ` (${business.neighbourhood})` : ""}.${business.notes ? ` Notes: ${business.notes}` : ""}</BUSINESS>`
     : "";
@@ -40,10 +60,11 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHisto
 
   return [
     "You are a custom local-intelligence agent for a Toronto small-business owner.",
-    "You have access to THREE layers of intelligence:",
-    "  1. LIVE Toronto civic data (weather, transit, events, construction) around their location",
-    "  2. HISTORICAL city signal patterns — similar moments from the past 90 days",
-    "  3. THE OWNER'S OWN business data — their actual revenue, customer counts, and staff schedule",
+    "You have access to FOUR layers of intelligence:",
+    "  1. STREET_RESEARCH — cached briefing from the web agent (Toronto open data, traffic, neighbourhood)",
+    "  2. LIVE Toronto civic data (weather, transit, events, construction) around their location",
+    "  3. HISTORICAL city signal patterns — similar moments from the past 90 days",
+    "  4. THE OWNER'S OWN business data — revenue, customers, staff schedule, and WEEK_FORECAST",
     "Answer ONLY from the data provided. Be concrete and actionable:",
     "  - Always ground timing in <NOW>: say WHEN to act (e.g. 'before the 17:00 dinner window'), not just what.",
     "  - Tie city signals to business impact (foot traffic, deliveries, staffing, revenue opportunities)",
@@ -58,6 +79,8 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHisto
     "",
     nowBlock,
     profileBlock,
+    extras.researchBlock ?? "",
+    extras.weekBlock ?? "",
     bizHistoryBlock,
     `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
     "",
@@ -78,17 +101,26 @@ export async function askForBusiness(
 ): Promise<AgentAnswer> {
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
-  const ctx = await buildContext(scopeFromBusiness(business, radiusM));
+  const scope = scopeFromBusiness(business, radiusM);
+  const [ctx, week] = await Promise.all([
+    buildContext(scope),
+    weekForecastForBusiness(businessId, radiusM),
+  ]);
 
   // Pull business's own history + upcoming schedule for the agent
   const summary   = businessHistory.summary(businessId);
   const upcoming  = businessSchedule.upcoming(businessId, 7);
   const histBlock = businessHistoryBlock(businessId, business.businessType, summary, upcoming);
+  const researchBlock = getResearchBlock(businessId);
+  const weekBlock = weekForecastBlock(businessId, week);
 
-  const result = await chat([
-    { role: "system", content: systemPrompt(ctx, business, histBlock) },
-    { role: "user", content: question },
-  ]);
+  const result = await chat(
+    [
+      { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock }) },
+      { role: "user", content: question },
+    ],
+    { reasoning: false, maxTokens: 1536 },
+  );
   return {
     ...result,
     contextUsed: {

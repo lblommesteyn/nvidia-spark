@@ -173,7 +173,7 @@ export function AgentChat({ business }: { business: Business }) {
         <div class="panel-heading">
           <h2 class="panel-title">Your Toronto Agent</h2>
           <p class="panel-desc">
-            Grounded in live city data + your own revenue history and staff schedule.
+            Nemotron answers using Toronto live data, street research for your address, and your revenue/schedule.
           </p>
         </div>
         <span class="count-pill">{business.businessType}</span>

@@ -34,6 +34,8 @@ export function BusinessSetup({ onCreated, onCancel }: Props) {
     setError(null);
     try {
       const biz = await api.createBusiness({ name, businessType, address, headcount, notes });
+      // Street research runs in the background; agent still works with live data if this is slow.
+      void api.refreshBusinessResearch(biz.id).catch(() => {});
       onCreated(biz);
     } catch (err) {
       setError(

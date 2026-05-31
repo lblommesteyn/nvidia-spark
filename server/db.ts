@@ -275,6 +275,82 @@ interface SnapshotRow {
 
 export type SnapshotInsert = Omit<SnapshotRow, "id">;
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS business_research (
+    business_id   TEXT PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    briefing      TEXT NOT NULL DEFAULT '',
+    sources       TEXT NOT NULL DEFAULT '[]',
+    generated_at  TEXT NOT NULL,
+    error         TEXT
+  );
+`);
+
+interface ResearchRow {
+  business_id: string;
+  status: string;
+  briefing: string;
+  sources: string;
+  generated_at: string;
+  error: string | null;
+}
+
+export interface BusinessResearchRow {
+  business_id: string;
+  status: string;
+  briefing: string;
+  sources: string[];
+  generated_at: string;
+  error: string | null;
+}
+
+export const businessResearch = {
+  get(businessId: string): BusinessResearchRow | undefined {
+    const row = db.prepare("SELECT * FROM business_research WHERE business_id = ?").get(businessId) as
+      | ResearchRow
+      | undefined;
+    if (!row) return undefined;
+    let sources: string[] = [];
+    try {
+      sources = JSON.parse(row.sources) as string[];
+    } catch {
+      sources = [];
+    }
+    const { sources: _raw, ...rest } = row;
+    return { ...rest, sources };
+  },
+
+  setPending(businessId: string): void {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO business_research (business_id, status, briefing, sources, generated_at)
+       VALUES (?, 'pending', '', '[]', ?)
+       ON CONFLICT(business_id) DO UPDATE SET status = 'pending', error = NULL, generated_at = excluded.generated_at`,
+    ).run(businessId, now);
+  },
+
+  save(businessId: string, briefing: string, sources: string[]): ResearchRow {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO business_research (business_id, status, briefing, sources, generated_at, error)
+       VALUES (?, 'ready', ?, ?, ?, NULL)
+       ON CONFLICT(business_id) DO UPDATE SET
+         status = 'ready', briefing = excluded.briefing, sources = excluded.sources,
+         generated_at = excluded.generated_at, error = NULL`,
+    ).run(businessId, briefing, JSON.stringify(sources), now);
+    return db.prepare("SELECT * FROM business_research WHERE business_id = ?").get(businessId) as ResearchRow;
+  },
+
+  setError(businessId: string, error: string): void {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO business_research (business_id, status, briefing, sources, generated_at, error)
+       VALUES (?, 'error', '', '[]', ?, ?)
+       ON CONFLICT(business_id) DO UPDATE SET status = 'error', error = excluded.error, generated_at = excluded.generated_at`,
+    ).run(businessId, now, error);
+  },
+};
+
 export const snapshots = {
   insert(row: SnapshotInsert): void {
     db.prepare(`

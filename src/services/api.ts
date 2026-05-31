@@ -296,6 +296,30 @@ export const api = {
       body: JSON.stringify(input),
     }).then(json<Business>),
 
+  businessResearch: (businessId: string) =>
+    fetch(`/api/businesses/${businessId}/research`).then(
+      json<{
+        businessId: string;
+        status: "pending" | "ready" | "error";
+        briefing: string;
+        sources: string[];
+        generatedAt: string | null;
+        error?: string;
+      }>,
+    ),
+
+  refreshBusinessResearch: (businessId: string) =>
+    fetch(`/api/businesses/${businessId}/research`, { method: "POST" }).then(
+      json<{
+        businessId: string;
+        status: "pending" | "ready" | "error";
+        briefing: string;
+        sources: string[];
+        generatedAt: string;
+        error?: string;
+      }>,
+    ),
+
   deleteBusiness: (id: string) =>
     fetch(`/api/businesses/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>),
 

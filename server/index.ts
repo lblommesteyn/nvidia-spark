@@ -19,6 +19,7 @@ import {
 } from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
 import { askForBusiness, askForPoint } from "./ai/agent.ts";
+import { enqueueBusinessResearch, researchStatus, runBusinessResearch } from "./ai/web-agent.ts";
 import { findSimilarMoments } from "./ai/patterns.ts";
 import { startSnapshotService } from "./ai/snapshot.ts";
 import { startMonitor } from "./ai/monitor.ts";
@@ -270,7 +271,23 @@ app.post("/api/businesses", async (c) => {
     headcount: Number(body.headcount) || 1,
     notes: body.notes,
   };
-  return c.json(businesses.create(input), 201);
+  const created = businesses.create(input);
+  enqueueBusinessResearch(created);
+  return c.json(created, 201);
+});
+
+app.get("/api/businesses/:id/research", (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const research = researchStatus(b.id);
+  return c.json(research ?? { businessId: b.id, status: "pending", briefing: "", sources: [], generatedAt: null });
+});
+
+app.post("/api/businesses/:id/research", async (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const radiusM = Number(c.req.query("radius") ?? 750);
+  return c.json(await runBusinessResearch(b, radiusM));
 });
 
 app.delete("/api/businesses/:id", (c) =>
