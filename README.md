@@ -1,167 +1,216 @@
-# Toronto Monitor
+# CityFlow — Toronto Monitor
 
-A real-time **City of Toronto** civic-intelligence dashboard with a **per-business
-AI agent**. Business owners set up their location, type, and team size, and get a
-map + data feeds + a conversational agent grounded in live Toronto data scoped to
-their address.
+**A real-time City of Toronto civic-intelligence dashboard with a per-business AI agent.**
+A business owner enters their address, type, and team size, and gets a live map,
+fresh civic data feeds scoped to their block, an ML demand forecast, and a
+conversational agent that reasons over all of it — with **NVIDIA Nemotron running
+on-device on the DGX / GX10 GPU**.
 
-Inspired by [WorldMonitor](../worldmonitor)'s architecture (map + panel grid +
-cached service layer), extended with a real backend, SQLite persistence, and a
-provider-agnostic LLM agent.
+> **Live demo:** https://armband-ravioli-crayfish.ngrok-free.dev
+> **Repo:** https://github.com/lblommesteyn/nvidia-spark
 
-## Stack
+---
 
-- **Frontend:** Vite 6 + Preact 10 (TypeScript, strict), MapLibre GL (locked to Toronto)
-- **Backend:** Hono (Node) — data gateway, AI endpoints, business store
-- **DB:** SQLite (better-sqlite3) for business profiles
-- **Geocoding:** OpenStreetMap Nominatim (free, no key, Toronto-bounded)
-- **Data:** City of Toronto Open Data (CKAN) + Open-Meteo (weather/air quality)
-- **LLM:** provider-agnostic (NVIDIA Nemotron / OpenAI / Anthropic / Ollama / built-in mock)
-
-## Toronto City Brain — on-device Nemotron (GX10)
-
-The dashboard's agent **and** its **Demand Forecast** tile run against a
-provider-agnostic LLM layer that prefers a local **NVIDIA Nemotron NIM**
-(OpenAI-compatible). Point it at a Nemotron model served on an **ASUS GX10**
-(GB10 Grace-Blackwell, 128 GB) and all reasoning happens on-device, no cloud
-round-trip:
-
-```bash
-# .env
-NEMOTRON_BASE_URL=http://localhost:8000/v1
-NEMOTRON_MODEL=nvidia/llama-3.3-nemotron-super-49b-v1
-```
-
-- **Demand Forecast** (`GET /api/forecast`) — a next-~12h customer-demand outlook
-  fusing events, YYZ flights, weather, transit, construction and time-of-day. It
-  always works: a deterministic heuristic supplies a grounded baseline, and when
-  a Nemotron NIM is active the model reasons over the same signals and returns
-  strict JSON (heuristic fallback on any parse failure).
-- **LoRA fine-tuning** — `npm run gen:dataset` distills Toronto context snapshots
-  into JSONL training rows (teacher = Super-49B when a NIM is up, heuristic
-  otherwise). Full deploy + fine-tune runbook in **[docs/GX10-NEMOTRON.md](docs/GX10-NEMOTRON.md)**.
-
-## Run
+## 1. Quick start
 
 ```bash
 npm install
-npm run dev:all      # web on :3100, api on :8787 (Vite proxies /api → api)
+npm run dev:all       # starts everything (see ports below)
 ```
 
-Then open http://localhost:3100 and click **+ Business**.
+Open **http://localhost:3100** and click **+ Business**.
 
-Individually:
+| Process | Port | What it is |
+|---|---|---|
+| web | 3100 | Vite + Preact frontend (proxies `/api` → api) |
+| api | 8787 | Hono backend (data gateway + AI endpoints) |
+| ml  | 8788 | CityFlow gradient demand model (Flask) |
+| asr | 8789 | Parakeet voice input (Flask, optional) |
+
+**No API key is required to demo** — with no LLM key set, the agent falls back to a
+grounded, rule-based responder, and every live feed that has a no-key source stays live.
+
+Other handy commands:
 
 ```bash
-npm run dev          # frontend only (:3100)
-npm run dev:server   # backend only (:8787)
-npm run typecheck    # frontend + server
+npm run dev          # frontend only
+npm run dev:server   # backend only
+npm run typecheck    # frontend + server typecheck
+bash scripts/tunnel.sh   # publish :3100 to the public ngrok URL (run on the GPU host)
 ```
 
-## Enabling a real agent
+---
 
-No key needed to demo — the agent falls back to a grounded, rule-based responder.
-To enable a conversational LLM, copy `.env.example` to `.env` and set ONE provider
-(`NEMOTRON_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `OLLAMA_HOST`).
-Provider priority: **Nemotron → OpenAI → Anthropic → Ollama → mock**. No code changes.
+## 2. Tech stack & architecture
 
-## Data sources
+**Stack:** Vite 6 + Preact 10 (TypeScript, strict) · MapLibre GL · Hono (Node) ·
+SQLite (better-sqlite3) · Python/Flask ML + ASR microservices · provider-agnostic
+LLM layer (NVIDIA Nemotron / OpenAI / Anthropic / Ollama / built-in mock).
 
-| Source | Dataset | Status |
+```
+                         Browser  (Preact + MapLibre)
+                                │   http://localhost:3100
+                                │   relative /api calls
+                                ▼
+              ┌─────────────────────────────────────────┐
+              │   Hono API  (Node, :8787)                │
+              │   cache + TTL + single-flight            │
+              └───┬───────────────┬───────────────┬──────┘
+                  │               │               │
+        ┌─────────▼──────┐  ┌─────▼───────┐  ┌────▼─────────────┐
+        │ SQLite          │  │ LLM layer   │  │ Live civic feeds │
+        │ business store  │  │ provider-   │  │ Toronto Open Data│
+        └─────────────────┘  │ agnostic    │  │ Open-Meteo, GBFS │
+                             └─────┬───────┘  │ TTC, ESPN, OpenSky│
+                                   │          └──────────────────┘
+                     ┌─────────────▼───────────────┐
+                     │  NVIDIA Nemotron NIM         │
+                     │  on DGX / GX10 GPU (on-device)│
+                     └──────────────────────────────┘
+
+        ┌──────────────────────────┐     ┌──────────────────────────┐
+        │ CityFlow ML (Flask :8788)│     │ Parakeet ASR (Flask :8789)│
+        │ gradient demand model    │     │ voice → text (GPU)        │
+        └──────────────────────────┘     └──────────────────────────┘
+
+   Public URL:  ngrok tunnel  ──►  :3100   (scripts/tunnel.sh)
+```
+
+**How per-business tailoring works:**
+1. Owner enters name/type/address/staff → geocoded to coords + neighbourhood (OpenStreetMap Nominatim), stored in SQLite.
+2. `buildContext()` pulls every data source, filters geolocated records to a radius around the business, and assembles a compact, model-friendly digest.
+3. The agent prompt embeds that digest + the business profile (and, when the **Demand model** toggle is on, the CityFlow ML prediction), so answers are specific to *that* business's location and type.
+
+More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Nemotron runbook: [`docs/GX10-NEMOTRON.md`](docs/GX10-NEMOTRON.md).
+
+---
+
+## 3. Reproduce the demo (env vars & API keys)
+
+Everything runs with **zero keys**. To enable the full experience, copy the sample
+and set what you need — **no code changes required**:
+
+```bash
+cp .env.example .env
+```
+
+Provider priority for the LLM: **Nemotron → OpenAI → Anthropic → Ollama → mock**.
+
+### Minimal `.env` for the GPU demo (Nemotron on the DGX/GX10 via Ollama)
+
+```bash
+# LLM — Nemotron served locally on the GPU box (on-device, no cloud)
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=nemotron-3-nano:30b        # your exact `ollama list` tag
+# (leave NEMOTRON_BASE_URL blank so the ollama provider is selected)
+
+# Voice input (optional) — Parakeet ASR on the same GPU box
+PARAKEET_URL=http://127.0.0.1:8789
+```
+
+Alternative LLM wiring (pick one) — all documented inline in `.env.example`:
+
+| Provider | Key / vars |
+|---|---|
+| Nemotron NIM (local) | `NEMOTRON_BASE_URL=http://localhost:8000/v1`, `NEMOTRON_MODEL=...` |
+| Nemotron (NVIDIA hosted / NGC) | `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`, `NEMOTRON_MODEL=...`, `NEMOTRON_API_KEY=nvapi-...` |
+| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` |
+| Ollama (generic) | `OLLAMA_HOST`, `OLLAMA_MODEL` |
+
+### Optional data-enrichment keys (all have a no-key fallback)
+
+| Key | Enriches | Without it |
 |---|---|---|
-| Weather | Open-Meteo | **Live** |
-| Air Quality | Open-Meteo | **Live** |
-| Road Restrictions & Construction | Toronto Open Data (real-time) | **Live** |
-| Bike Share (supply/demand) | Bike Share Toronto (GBFS) | **Live** |
-| TTC Live Vehicles | TTC via Umo IQ | **Live** |
-| Business Licences | Toronto Open Data (CKAN) | **Live** (city-wide; no coords in dataset) |
-| Building Permits | Toronto Open Data (CKAN) | **Live** (city-wide; no coords in dataset) |
-| 311 Requests | Toronto Open Data | Demo (no datastore API; file-only) |
-| Concerts, Games & Events | ESPN · Ticketmaster · PredictHQ | **Live** (ESPN sports, no key) |
-| Road Congestion (traffic) | TomTom Flow / synthetic model | **Live** with `TOMTOM_API_KEY`, else demo |
-| Flights (YYZ inflow) | OpenSky · aviationstack | **Live** (OpenSky aircraft count, no key) |
-| TTC / GO Service Alerts | TTC live-alerts API | **Live** |
-| Parking (Green P) | Toronto Open Data (Green P) | **Live** (locations & capacity; not real-time spaces) |
-| Film & Road-Occupancy Permits | — | Demo (no live City API yet) |
+| `TICKETMASTER_API_KEY` (free) | venue-precise concerts/festivals | ESPN sports only |
+| `PREDICTHQ_TOKEN` | demand-ranked events w/ predicted attendance | disabled |
+| `TOMTOM_API_KEY` | live road-segment congestion | synthetic congestion model on real arteries |
+| `AVIATIONSTACK_KEY` | scheduled YYZ arrivals (airline/terminal) | live aircraft count via OpenSky |
+| `GOOGLE_PLACES_API_KEY` | nearby business density / ratings | Toronto business-licences open data |
+| `METROLINX_API_KEY` | true GO GTFS-RT positions | schedule-accurate GO simulation |
 
-Each source is badged **LIVE / DEMO / ERR** in the UI, and every tile shows
-**"updated X ago"** so you can see exactly how fresh each feed is.
+### Publishing the URL (demo)
 
-### Events providers (concerts, games, festivals)
+The public URL is an **ngrok tunnel from the GPU host** to the web server on `:3100`
+(only the frontend is exposed; the API + Nemotron stay on localhost). On the GPU box:
 
-The events feed aggregates multiple providers and is honest about which are live:
-
-| Provider | Coverage | Key | Without key |
-|---|---|---|---|
-| **ESPN** (public schedule API) | Toronto pro sports (Blue Jays, TFC, Leafs, Raptors, Argos) | none | **Live** |
-| **Ticketmaster** Discovery | Concerts, arts, festivals (venue-precise coords) | `TICKETMASTER_API_KEY` (free) | disabled |
-| **PredictHQ** | Demand-ranked events w/ predicted attendance | `PREDICTHQ_TOKEN` | disabled |
-
-ESPN gives a venue name but no coordinates, so home games are placed on the map
-via a known-venue lookup (Rogers Centre, Scotiabank Arena, BMO Field, …); away
-games are still listed. PredictHQ's `rank` / `phq_attendance` feed the
-neighbourhood demand-flow model. Add keys in `.env` to enable the gated
-providers — no code changes required.
-
-## API (AI-friendly)
-
-The backend self-describes for external agents / MCP bridges:
-
-- `GET /api/manifest` and `GET /.well-known/ai-plugin.json` — tools + endpoints
-- `GET /api/context?businessId=…` (or `?lon=&lat=&radius=`) — location-scoped digest
-- `GET /api/forecast?businessId=…` (or `?lon=&lat=&radius=`) — next-~12h demand forecast
-- `GET /api/forecast/dataset?n=…` — sample LoRA training rows (add `&jsonl=1` for raw JSONL)
-- `POST /api/agent` `{ question, businessId | lon+lat, radiusM }` — grounded answer
-- `GET /api/data/map` — all geolocated civic records
-- `GET /api/data/source/:key` — one source (live/demo envelope)
-- `GET /api/geocode?q=…` — Toronto address → coords
-- `GET /api/businesses`, `POST /api/businesses`, `DELETE /api/businesses/:id`
-
-## Architecture
-
-```
-server/
-  index.ts            # Hono app + routes
-  cache.ts            # fetchJson + TTL cache + single-flight
-  db.ts               # SQLite businesses store
-  geo.ts              # Nominatim geocode + Haversine + Toronto bounds
-  ckan.ts             # Toronto Open Data client + lat/lon extraction
-  manifest.ts         # AI tool/endpoint manifest
-  sources/
-    civic.ts          # CKAN-backed registry (per-source mapper + demo fallback)
-    environment.ts    # Open-Meteo weather + air quality
-  ai/
-    context.ts        # buildContext() — scoped, machine-readable digest
-    provider.ts       # provider-agnostic chat (nemotron/openai/anthropic/ollama/mock)
-    agent.ts          # grounds the LLM in location context
-    forecast.ts       # demand forecast (heuristic baseline + LLM/Nemotron reasoning)
-    dataset.ts        # context snapshots → LoRA fine-tuning JSONL (distillation)
-scripts/
-  gen-forecast-dataset.ts  # `npm run gen:dataset` — writes training JSONL
-docs/
-  GX10-NEMOTRON.md    # serve Nemotron NIM + LoRA fine-tune runbook
-src/
-  services/api.ts     # typed backend client
-  components/
-    TorontoMap.tsx    # MapLibre, Toronto-locked, category markers + home pin
-    BusinessSetup.tsx # onboarding form (geocodes on submit)
-    AgentChat.tsx     # chat with the tailored agent
-    Panel.tsx         # panel shell w/ status badge
-  App.tsx             # orchestration
+```bash
+npm run dev:all              # in one terminal
+bash scripts/tunnel.sh       # in another → prints the public URL
 ```
 
-## How the per-business tailoring works
+---
 
-1. Owner enters name, type, address, staff, notes → geocoded to coords + neighbourhood, stored in SQLite.
-2. `buildContext()` pulls every data source, filters geolocated records to a radius
-   around the business, and assembles a compact, model-friendly digest.
-3. The agent system prompt embeds that digest + the business profile, so answers
-   are specific to *that* business's location and type.
+## 4. Datasets & synthetic data (provenance)
 
-### Roadmap
+### Live data (fetched at runtime, cached with TTL)
 
-- Ward-polygon scoping for coordless datasets (permits/licences/311)
-- Parse file-only datasets (road restrictions, 311, events) into live geo records
-- Demographics (neighbourhood profiles) + transit (TTC GTFS-RT via relay)
-- Tool-calling agent loop (let the LLM query sources on demand)
-- Auth + multi-tenant business accounts
+| Source | Provider | Key? |
+|---|---|---|
+| Weather + Air Quality | Open-Meteo | no |
+| Road Restrictions & Construction | City of Toronto Open Data (real-time) | no |
+| Bike Share supply/demand | Bike Share Toronto (GBFS) | no |
+| TTC live vehicles + service alerts | TTC / Umo IQ | no |
+| Business Licences, Building Permits, Green P Parking | Toronto Open Data (CKAN) | no |
+| Concerts / Games / Events | ESPN (sports) · Ticketmaster · PredictHQ | ESPN free |
+| Flights into YYZ | OpenSky (aircraft count) · aviationstack | OpenSky free |
+| GO Train lines + trains | bundled GTFS extract (`server/data/go-gtfs.json`) | no |
+| Geocoding | OpenStreetMap Nominatim (Toronto-bounded) | no |
+
+Every tile is badged **LIVE / DEMO / ERR** and shows **"updated X ago"** so freshness
+is always visible and honest.
+
+### Synthetic / simulated data
+
+- **CityFlow demand model (`cityflow_ML_model/`, served on :8788).** A
+  gradient-boosting model that predicts hourly customer demand per business
+  archetype (cafe / restaurant). It is trained on a **transparent Toronto demand
+  simulation** whose ground truth lives in
+  [`cityflow_ML_model/cityflow/sim/ground_truth.py`](cityflow_ML_model/cityflow/sim/ground_truth.py).
+  Every effect (base hourly demand, day-of-week multipliers, weather/event modifiers)
+  is **injected explicitly**, then the model is checked for whether it *recovered*
+  those values from noisy data — *"we injected a −30% rain effect; the model learned
+  −28%."* Provenance is the file itself: we defined the numbers, openly, and proved
+  recovery. Training data: `data/demand-2024.jsonl`, `data/demand-loc-2024.jsonl`.
+- **GO Train positions** are a **schedule-accurate simulation** from the bundled GTFS
+  timetable — trains run only during real service hours at real frequency (until a
+  `METROLINX_API_KEY` swaps in live GTFS-RT).
+- **Road congestion** without a TomTom key is a **time-of-day-weighted synthetic model
+  drawn on real Toronto arteries**.
+- **Forecast fine-tuning data** (`data/forecast-*.jsonl`) is distilled from logged
+  real Toronto context snapshots (`data/snapshots.jsonl`) via `npm run gen:dataset`
+  (teacher = Nemotron Super-49B when a NIM is up, deterministic heuristic otherwise).
+
+---
+
+## 5. Known limitations & next steps
+
+**Known limitations**
+- Some Toronto open datasets ship **without coordinates** (licences, permits, 311),
+  so they're shown as a city-wide sample rather than radius-filtered.
+- **311** and a few permit feeds are **file-only / demo** (no live datastore API yet).
+- The CityFlow demand model covers **two archetypes** (cafe, restaurant); other
+  business types map to the nearest archetype.
+- The public demo runs the **Vite dev server** behind ngrok; the free ngrok tier shows
+  a one-time "Visit Site" interstitial.
+- Single-tenant: business profiles live in a local SQLite file, no auth yet.
+
+**Next steps**
+- Ward-polygon scoping for coordless datasets (permits / licences / 311).
+- Parse file-only feeds (road restrictions, 311, events) into live geo records.
+- Wire the new business-setup demand inputs (hours, staffing, transit relevance)
+  directly into the ML feature vector.
+- Tool-calling agent loop (let the LLM query sources on demand) + MCP bridge.
+- More demand archetypes; real GTFS-RT relay; auth + multi-tenant accounts.
+
+---
+
+## API (self-describing, AI-friendly)
+
+- `GET /api/manifest` · `GET /.well-known/ai-plugin.json` — tools + endpoints
+- `GET /api/context?businessId=…` — location-scoped digest
+- `GET /api/forecast?businessId=…` — next-~12h demand forecast
+- `POST /api/agent` · `POST /api/agent/stream` `{ question, businessId, radiusM, useGradient }`
+- `GET /api/cameras/nearest?lon=&lat=` — nearest live traffic camera
+- `GET /api/data/map` · `GET /api/data/source/:key` — civic records
+- `GET /api/businesses` · `POST /api/businesses` · `DELETE /api/businesses/:id`
