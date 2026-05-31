@@ -337,10 +337,28 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
       }),
     },
   );
-  let text = res.choices[0]?.message?.content ?? "";
-  // Strip any <think>…</think> reasoning trace from the final answer.
-  text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  const raw = res.choices[0]?.message?.content ?? "";
+  const text = stripThink(raw);
+  if (!text && raw.trim()) {
+    // The model returned only a reasoning trace (or an unclosed <think>) with no
+    // visible answer. Surface the raw text rather than swallowing the whole reply.
+    console.warn(`[nemotron] answer empty after <think> strip; raw len=${raw.length}, preview=${JSON.stringify(raw.slice(0, 200))}`);
+    return { text: raw.trim(), provider: "nemotron", model };
+  }
   return { text, provider: "nemotron", model };
+}
+
+/**
+ * Remove <think>…</think> reasoning traces from a complete response. Handles
+ * closed blocks, an unclosed trailing <think> (keeps text before it), and never
+ * returns empty when there is non-think content present.
+ */
+function stripThink(raw: string): string {
+  let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  if (t) return t;
+  // Unclosed <think> (e.g. cut off by max_tokens): keep any answer before it.
+  t = raw.replace(/<think>[\s\S]*$/i, "").trim();
+  return t;
 }
 
 async function openai(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {

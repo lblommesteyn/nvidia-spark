@@ -416,6 +416,7 @@ app.post("/api/agent/stream", async (c) => {
       // <think> trace) or throws mid-stream, fall back to a single non-streaming
       // call so the answer ALWAYS comes through.
       let emitted = 0;
+      let streamErr: unknown = null;
       try {
         for await (const delta of chatStream(req.messages, req.opts)) {
           if (delta) {
@@ -424,24 +425,17 @@ app.post("/api/agent/stream", async (c) => {
           }
         }
       } catch (err) {
-        if (emitted === 0) {
-          try {
-            const result = await chat(req.messages, req.opts);
-            if (result.text) send({ delta: result.text });
-            emitted += result.text.length;
-          } catch (err2) {
-            send({ error: err2 instanceof Error ? err2.message : "agent error" });
-            try { controller.close(); } catch { /* already closed */ }
-            return;
-          }
-        }
+        streamErr = err;
       }
+      console.log(`[agent/stream] provider=${provider} model=${model} streamedChars=${emitted}${streamErr ? ` streamErr=${streamErr instanceof Error ? streamErr.message : String(streamErr)}` : ""}`);
 
       if (emitted === 0) {
         try {
           const result = await chat(req.messages, req.opts);
+          console.log(`[agent/stream] fallback chat() chars=${result.text.length} preview=${JSON.stringify(result.text.slice(0, 120))}`);
           send({ delta: result.text || "(No response from the model.)" });
         } catch (err) {
+          console.error(`[agent/stream] fallback chat() failed: ${err instanceof Error ? err.message : String(err)}`);
           send({ error: err instanceof Error ? err.message : "agent error" });
         }
       }
