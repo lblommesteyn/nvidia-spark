@@ -109,6 +109,7 @@ export function AgentChat({ business }: { business: Business }) {
   const scrollRef    = useRef<HTMLDivElement>(null);
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
+  const streamBuf    = useRef("");
 
   const hasData = summary && summary.totalDays > 0;
 
@@ -130,6 +131,7 @@ export function AgentChat({ business }: { business: Business }) {
   async function ask(question: string) {
     if (!question.trim() || busy) return;
     setInput("");
+    streamBuf.current = "";
     setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
     setBusy(true);
 
@@ -142,18 +144,28 @@ export function AgentChat({ business }: { business: Business }) {
       ));
 
     try {
-      // Non-streaming request: the model's /v1 SSE is unreliable on the DGX, so
-      // we wait for the full answer and render it once it arrives.
-      const a = await api.agent({ businessId: business.id, question });
-      setStreamingMsg({
-        text: a.text || "(No response from the model.)",
-        provider: a.provider,
-        streaming: false,
+      await api.agentStream({ businessId: business.id, question }, (e) => {
+        if (e.error) {
+          setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
+          return;
+        }
+        if (e.provider) setStreamingMsg({ provider: e.model || e.provider });
+        if (e.delta) {
+          streamBuf.current += e.delta;
+          setStreamingMsg({ text: streamBuf.current });
+          scrollDown();
+        }
       });
     } catch (err) {
       setStreamingMsg({ text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false });
     } finally {
-      setStreamingMsg({ streaming: false });
+      // Capture ref value BEFORE clearing — the functional updater runs async,
+      // so reading streamBuf.current inside the closure would see the cleared value.
+      const finalText = streamBuf.current;
+      streamBuf.current = "";
+      setMessages((m) => m.map((msg) =>
+        msg.streaming ? { ...msg, text: finalText || msg.text, streaming: false } : msg,
+      ));
       setBusy(false);
       scrollDown();
     }
