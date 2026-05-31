@@ -106,6 +106,7 @@ export function AgentChat({ business }: { business: Business }) {
   const [manageOpen, setManageOpen]       = useState(false);
   const [genBusy, setGenBusy]       = useState(false);
   const [genMsg, setGenMsg]         = useState<string | null>(null);
+  const [useGradient, setUseGradient] = useState(true);
   const scrollRef    = useRef<HTMLDivElement>(null);
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
@@ -248,12 +249,16 @@ export function AgentChat({ business }: { business: Business }) {
       ));
 
     try {
-      await api.agentStream({ businessId: business.id, question }, (e) => {
+      await api.agentStream({ businessId: business.id, question, useGradient }, (e) => {
         if (e.error) {
           setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
           return;
         }
-        if (e.provider) setStreamingMsg({ provider: e.model || e.provider });
+        if (e.provider) {
+          const label = e.model || e.provider;
+          const mode = e.gradientUsed ? "gradient-assisted" : "nemotron-only";
+          setStreamingMsg({ provider: `${label} · ${mode}` });
+        }
         if (e.delta) {
           streamBuf.current += e.delta;
           setStreamingMsg({ text: streamBuf.current });
@@ -307,10 +312,34 @@ export function AgentChat({ business }: { business: Business }) {
         <div class="panel-heading">
           <h2 class="panel-title">Your Toronto Agent</h2>
           <p class="panel-desc">
-            Nemotron answers using Toronto live data, street research for your address, and your revenue/schedule.
+            {useGradient
+              ? "Nemotron, grounded in the CityFlow demand model, plus Toronto live data, street research, and your revenue/schedule."
+              : "Nemotron answering from Toronto live data, street research, and your revenue/schedule (no demand model)."}
           </p>
         </div>
-        <span class="count-pill">{business.businessType}</span>
+        <div class="agent-header-side">
+          <span class="agent-model-badge">{business.businessType}</span>
+          <div class="model-toggle" role="group" aria-label="Response model">
+            <button
+              type="button"
+              class={`model-toggle-opt${useGradient ? "" : " is-active"}`}
+              aria-pressed={!useGradient}
+              onClick={() => setUseGradient(false)}
+              title="Pure Nemotron LLM — no ML demand model in the prompt"
+            >
+              Nemotron
+            </button>
+            <button
+              type="button"
+              class={`model-toggle-opt${useGradient ? " is-active" : ""}`}
+              aria-pressed={useGradient}
+              onClick={() => setUseGradient(true)}
+              title="Feed the gradient demand model's predictions into Nemotron"
+            >
+              + Demand model
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* ---- Data context bar ---- */}

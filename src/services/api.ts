@@ -417,8 +417,8 @@ export const api = {
    * Resolves when the stream closes.
    */
   agentStream: async (
-    body: { question: string; businessId: string; radiusM?: number },
-    onEvent: (e: { delta?: string; provider?: string; model?: string; done?: boolean; error?: string }) => void,
+    body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean },
+    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; done?: boolean; error?: string }) => void,
   ): Promise<void> => {
     const res = await fetch("/api/agent/stream", {
       method: "POST",
@@ -519,4 +519,6 @@ export interface TrafficCamera {
   distanceM: number;
   /** Same-origin proxy URL for the latest snapshot. */
   imageUrl: string;
+  /** Direct upstream https snapshot (fallback if the proxy can't fetch it). */
+  directUrl?: string;
 }

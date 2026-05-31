@@ -14,6 +14,7 @@ export function MapCamera({ business }: { business: Business | null }) {
   const [open, setOpen] = useState(true);
   const [err, setErr] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [useDirect, setUseDirect] = useState(false);
   const [bust, setBust] = useState(() => Date.now());
   const tick = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -23,6 +24,7 @@ export function MapCamera({ business }: { business: Business | null }) {
     setCam(null);
     setErr(false);
     setImgFailed(false);
+    setUseDirect(false);
     if (!business) return;
     api
       .nearestCamera(business.lon, business.lat)
@@ -58,6 +60,21 @@ export function MapCamera({ business }: { business: Business | null }) {
       : `${(cam.distanceM / 1000).toFixed(1)} km away`
     : "";
 
+  // Prefer our same-origin proxy (fresh https + cache headers). If it can't load
+  // (e.g. the host can't egress to the camera CDN), fall back to the upstream URL
+  // directly — the browser usually has internet even when the server doesn't.
+  const baseSrc = useDirect && cam?.directUrl ? cam.directUrl : cam?.imageUrl;
+  const sep = baseSrc?.includes("?") ? "&" : "?";
+
+  function onImgError() {
+    if (!useDirect && cam?.directUrl) {
+      // First failure on the proxy → retry once against the upstream snapshot.
+      setUseDirect(true);
+    } else {
+      setImgFailed(true);
+    }
+  }
+
   return (
     <div class={`map-camera${open ? "" : " is-collapsed"}`}>
       <button class="map-camera-head" onClick={() => setOpen((v) => !v)} title={open ? "Collapse camera" : "Expand camera"}>
@@ -75,9 +92,9 @@ export function MapCamera({ business }: { business: Business | null }) {
           ) : (
             <img
               class="map-camera-img"
-              src={`${cam.imageUrl}?t=${bust}`}
+              src={`${baseSrc}${sep}t=${bust}`}
               alt={`Traffic camera at ${cam.name}`}
-              onError={() => setImgFailed(true)}
+              onError={onImgError}
               onLoad={() => setImgFailed(false)}
             />
           )}

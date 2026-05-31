@@ -20,6 +20,7 @@ export interface AgentAnswer extends ChatResult {
 export interface AgentRequest {
   messages: ChatMessage[];
   opts: ChatOptions;
+  gradientUsed: boolean;
   contextUsed: AgentAnswer["contextUsed"];
 }
 
@@ -135,14 +136,17 @@ export async function buildBusinessAgentRequest(
   businessId: string,
   question: string,
   radiusM = 750,
+  opts: { useGradient?: boolean } = {},
 ): Promise<AgentRequest> {
+  const useGradient = opts.useGradient ?? true;
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
   const scope = scopeFromBusiness(business, radiusM);
   const [ctx, week, mlProfile] = await Promise.all([
     buildContext(scope),
     weekForecastForBusiness(businessId, radiusM),
-    mlWeeklyProfile(business.businessType).catch(() => null),
+    // Only consult the gradient demand model when the user opts into it.
+    useGradient ? mlWeeklyProfile(business.businessType).catch(() => null) : Promise.resolve(null),
   ]);
 
   // Pull business's own history + upcoming schedule for the agent
@@ -151,9 +155,11 @@ export async function buildBusinessAgentRequest(
   const histBlock = businessHistoryBlock(businessId, business.businessType, summary, upcoming);
   const researchBlock = getResearchBlock(businessId);
   const weekBlock = weekForecastBlock(businessId, week);
-  const mlBlock = mlProfile
-    ? buildMlBlock(business.businessType, mlProfile.grid, mlProfile.model, mlProfile.archetype)
-    : "";
+  const mlBlock =
+    useGradient && mlProfile
+      ? buildMlBlock(business.businessType, mlProfile.grid, mlProfile.model, mlProfile.archetype) +
+        "\nGROUND your staffing/timing numbers in the ML_DEMAND_MODEL above when it is present."
+      : "";
 
   return {
     messages: [
@@ -161,6 +167,7 @@ export async function buildBusinessAgentRequest(
       { role: "user", content: question },
     ],
     opts: { reasoning: false, maxTokens: 1536 },
+    gradientUsed: useGradient && !!mlProfile,
     contextUsed: {
       name: business.name,
       businessType: business.businessType,
