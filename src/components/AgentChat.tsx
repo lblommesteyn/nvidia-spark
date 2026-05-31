@@ -109,7 +109,6 @@ export function AgentChat({ business }: { business: Business }) {
   const scrollRef    = useRef<HTMLDivElement>(null);
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
-  const streamBuf    = useRef("");
 
   const hasData = summary && summary.totalDays > 0;
 
@@ -131,42 +130,30 @@ export function AgentChat({ business }: { business: Business }) {
   async function ask(question: string) {
     if (!question.trim() || busy) return;
     setInput("");
-    streamBuf.current = "";
     setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
     setBusy(true);
 
     const scrollDown = () =>
       requestAnimationFrame(() => scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight));
 
-    // Use a ref to accumulate text so each setMessages call reads the full
-    // accumulated string — avoids stale-closure bugs when Preact batches
-    // rapid-fire functional state updates from a buffered SSE flush.
     const setStreamingMsg = (partial: Partial<Msg>) =>
       setMessages((m) => m.map((msg) =>
         msg.streaming ? { ...msg, ...partial } : msg,
       ));
 
     try {
-      await api.agentStream({ businessId: business.id, question }, (e) => {
-        if (e.error) {
-          setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
-          return;
-        }
-        if (e.provider) setStreamingMsg({ provider: e.provider });
-        if (e.delta) {
-          streamBuf.current += e.delta;
-          setStreamingMsg({ text: streamBuf.current });
-          scrollDown();
-        }
+      // Non-streaming request: the model's /v1 SSE is unreliable on the DGX, so
+      // we wait for the full answer and render it once it arrives.
+      const a = await api.agent({ businessId: business.id, question });
+      setStreamingMsg({
+        text: a.text || "(No response from the model.)",
+        provider: a.provider,
+        streaming: false,
       });
     } catch (err) {
       setStreamingMsg({ text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false });
     } finally {
-      // Commit the full accumulated text and clear the streaming flag in one update.
-      setMessages((m) => m.map((msg) =>
-        msg.streaming ? { ...msg, text: streamBuf.current || msg.text, streaming: false } : msg,
-      ));
-      streamBuf.current = "";
+      setStreamingMsg({ streaming: false });
       setBusy(false);
       scrollDown();
     }
