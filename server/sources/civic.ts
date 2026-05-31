@@ -26,6 +26,11 @@ export interface CivicSourceDef {
   attribution: string;
   /** City of Toronto Open Data dataset slug (package id) — for CKAN sources. */
   slug?: string;
+  /**
+   * Canonical public page for this data source. When omitted, it's derived from
+   * `slug` (the Open Data Toronto dataset page). Used for "view source" links.
+   */
+  url?: string;
   limit?: number;
   /** Map a raw CKAN row to a normalized record (return null to skip). */
   map?: (row: Record<string, unknown>, i: number) => CivicRecord | null;
@@ -44,12 +49,23 @@ export interface CivicSourceDef {
   load?: () => Promise<SourceResult<CivicRecord[]>>;
 }
 
+/**
+ * Public "view source" link for a civic source: an explicit `url` if provided,
+ * otherwise the Open Data Toronto dataset page derived from its CKAN `slug`.
+ */
+export function sourceUrl(def: CivicSourceDef): string | undefined {
+  if (def.url) return def.url;
+  if (def.slug) return `https://open.toronto.ca/dataset/${def.slug}/`;
+  return undefined;
+}
+
 export const CIVIC_SOURCES: CivicSourceDef[] = [
   {
     key: "road-restrictions",
     label: "Road Restrictions & Construction",
     category: "construction",
     attribution: "City of Toronto — Road Restrictions (real-time)",
+    url: "https://open.toronto.ca/dataset/road-restrictions/",
     load: loadRoadRestrictions,
     demo: [
       { id: "road-d1", category: "construction", title: "Gardiner Expwy EB", detail: "Lane reduction near Jarvis", lon: -79.366, lat: 43.642 },
@@ -61,6 +77,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Bike Share (Supply/Demand)",
     category: "bikeshare",
     attribution: "Bike Share Toronto (GBFS)",
+    url: "https://open.toronto.ca/dataset/bike-share-toronto/",
     load: loadBikeShare,
     demo: [
       { id: "bike-d1", category: "bikeshare", title: "Fort York / Capreol", detail: "12 bikes · 33 docks · balanced", lon: -79.395954, lat: 43.639832 },
@@ -71,6 +88,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "TTC Live Vehicles",
     category: "transit",
     attribution: "Toronto Transit Commission via Umo IQ",
+    url: "https://open.toronto.ca/dataset/ttc-routes-and-schedules/",
     load: loadTtc,
     demo: [
       { id: "ttc-d1", category: "transit", title: "Route 504", detail: "King streetcar", lon: -79.4, lat: 43.645 },
@@ -162,6 +180,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Concerts, Games & Events",
     category: "event",
     attribution: "ESPN · Ticketmaster · PredictHQ",
+    url: "https://www.ticketmaster.ca/discover/concerts/toronto",
     load: loadEvents,
     demo: [
       { id: "event-d1", category: "event", title: "Blue Jays vs. Yankees", detail: "MLB · Rogers Centre", lon: -79.3894, lat: 43.6414 },
@@ -173,6 +192,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "TTC Service Alerts",
     category: "alert",
     attribution: "Toronto Transit Commission — Service Alerts",
+    url: "https://www.ttc.ca/service-alerts",
     load: loadTtcAlerts,
     demo: [
       { id: "ttc-alert-d1", category: "alert", title: "Line 1 — Reduced service", detail: "Signal upgrade between St George and Eglinton" },
@@ -183,6 +203,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Green P Parking",
     category: "parking",
     attribution: "City of Toronto Open Data — Green P Parking",
+    url: "https://open.toronto.ca/dataset/green-p-parking/",
     load: loadParking,
     demo: [
       { id: "parking-d1", category: "parking", title: "20 Charles St E", detail: "Garage · 641 spaces", lon: -79.3853, lat: 43.6693 },
@@ -193,6 +214,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Flight Arrivals (YYZ)",
     category: "aviation",
     attribution: "aviationstack / OpenSky",
+    url: "https://opensky-network.org/",
     areaWide: true,
     load: loadFlights,
     demo: [
@@ -204,6 +226,7 @@ export const CIVIC_SOURCES: CivicSourceDef[] = [
     label: "Film & Road-Occupancy Permits",
     category: "permit",
     attribution: "City of Toronto — Film & Special Events Office",
+    url: "https://www.toronto.ca/business-economy/film-toronto/",
     // No live open-data API exists for these in Toronto yet; representative
     // sample, badged DEMO so the agent/UI is honest about it.
     load: async () => ({

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { businesses, snapshots, businessHistory, businessSchedule, type BusinessInput } from "./db.ts";
 import { geocode } from "./geo.ts";
-import { CIVIC_SOURCES, getCivicSource, loadCivicSource } from "./sources/civic.ts";
+import { CIVIC_SOURCES, getCivicSource, loadCivicSource, sourceUrl } from "./sources/civic.ts";
 import { getAirQuality, getWeather } from "./sources/environment.ts";
 import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
 import { computeFlow } from "./sources/neighbourhoods.ts";
@@ -105,7 +105,7 @@ app.get("/api/livetv/:id", async (c) => {
 
 // ---- Civic data sources ----
 app.get("/api/data/sources", (c) =>
-  c.json(CIVIC_SOURCES.map((s) => ({ key: s.key, label: s.label, category: s.category }))),
+  c.json(CIVIC_SOURCES.map((s) => ({ key: s.key, label: s.label, category: s.category, attribution: s.attribution, url: sourceUrl(s) }))),
 );
 
 app.get("/api/data/source/:key", async (c) => {
