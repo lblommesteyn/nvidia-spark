@@ -149,7 +149,7 @@ export function BusinessHistory({ business }: { business: Business }) {
     }
   }
 
-  async function generateSynthetic() {
+  async function generateBaseline() {
     setUploading(true);
     setUploadMsg(null);
     try {
@@ -265,13 +265,13 @@ export function BusinessHistory({ business }: { business: Business }) {
         <div class="bh-body">
           <div class="bh-upload-section">
             <div class="bh-upload-card">
-              <div class="bh-upload-title">Generate synthetic data</div>
+              <div class="bh-upload-title">Load demand baseline</div>
               <p class="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0.75rem" }}>
-                Creates 90 days of realistic revenue, customer counts &amp; staff schedule tuned to your business type (<strong>{business.businessType}</strong>).
-                Use this to explore the agent before you have real data.
+                Loads 90 days of calibrated revenue, customer counts &amp; staff schedule for your business type (<strong>{business.businessType}</strong>), derived from the CityFlow Toronto demand model.
+                Use this to get the agent running immediately.
               </p>
-              <button class="btn-primary" onClick={generateSynthetic} disabled={uploading}>
-                {uploading ? "Generating…" : "Generate 90-day sample"}
+              <button class="btn-primary" onClick={generateBaseline} disabled={uploading}>
+                {uploading ? "Loading…" : "Load 90-day baseline"}
               </button>
             </div>
 
