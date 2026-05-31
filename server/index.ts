@@ -31,6 +31,7 @@ import {
 } from "./ai/alerts.ts";
 import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
+import { rlOptimizer } from "./ai/rloptimizer.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
 
@@ -59,6 +60,11 @@ app.get("/api/health", (c) =>
     sources: CIVIC_SOURCES.map((s) => s.key),
     sseClients: sseClientCount(),
     patternRows: snapshots.count(),
+    rl: {
+      episodes: rlOptimizer.episodeCount,
+      policySteps: rlOptimizer.policySteps,
+      avgReward: Number(rlOptimizer.avgReward.toFixed(3)),
+    },
   }),
 );
 
