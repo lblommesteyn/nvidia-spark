@@ -37,11 +37,81 @@ export interface CivicGroup {
 export interface LocationContext {
   scope: ContextScope;
   generatedAt: string;
+  /** Toronto-local temporal context so the model can reason about "right now". */
+  now: TemporalContext;
   weather: SourceResult<unknown>;
   airQuality: SourceResult<unknown>;
   civic: CivicGroup[];
   /** Compact, model-friendly bullet summary. */
   highlights: string[];
+}
+
+export interface TemporalContext {
+  /** ISO timestamp of generation. */
+  iso: string;
+  /** Toronto-local date, e.g. "2026-05-30". */
+  date: string;
+  /** Toronto-local 24h clock, e.g. "18:42". */
+  time: string;
+  /** Hour of day 0–23 (Toronto). */
+  hour: number;
+  /** Weekday short name, e.g. "Fri". */
+  weekday: string;
+  /** Coarse part of day for human/owner phrasing. */
+  partOfDay: "overnight" | "early morning" | "morning" | "midday" | "afternoon" | "evening" | "late night";
+  isWeekend: boolean;
+  /** Meteorological season for Toronto's hemisphere. */
+  season: "winter" | "spring" | "summer" | "fall";
+}
+
+const TZ = "America/Toronto";
+
+/** Build a Toronto-local temporal snapshot the model can reason over. */
+export function temporalContext(at: Date = new Date()): TemporalContext {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(at);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  let hourStr = get("hour");
+  if (hourStr === "24") hourStr = "00"; // some ICU builds emit 24 at midnight
+  const hour = Number(hourStr);
+  const minute = get("minute");
+  const weekday = get("weekday");
+  const isWeekend = weekday === "Sat" || weekday === "Sun";
+
+  let partOfDay: TemporalContext["partOfDay"];
+  if (hour < 5) partOfDay = "overnight";
+  else if (hour < 8) partOfDay = "early morning";
+  else if (hour < 11) partOfDay = "morning";
+  else if (hour < 14) partOfDay = "midday";
+  else if (hour < 17) partOfDay = "afternoon";
+  else if (hour < 22) partOfDay = "evening";
+  else partOfDay = "late night";
+
+  const m = Number(month);
+  const season: TemporalContext["season"] =
+    m <= 2 || m === 12 ? "winter" : m <= 5 ? "spring" : m <= 8 ? "summer" : "fall";
+
+  return {
+    iso: at.toISOString(),
+    date: `${year}-${month}-${day}`,
+    time: `${hourStr}:${minute}`,
+    hour,
+    weekday,
+    partOfDay,
+    isWeekend,
+    season,
+  };
 }
 
 /**
@@ -101,10 +171,15 @@ export async function buildContext(scope: ContextScope): Promise<LocationContext
   });
 
   const highlights = buildHighlights(scope, weather, airQuality, civic);
+  const now = temporalContext();
+  highlights.unshift(
+    `Now: ${now.weekday} ${now.date}, ${now.time} (${now.partOfDay}, ${now.season}${now.isWeekend ? ", weekend" : ", weekday"}).`,
+  );
 
   return {
     scope,
     generatedAt: new Date().toISOString(),
+    now,
     weather,
     airQuality,
     civic,

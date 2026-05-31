@@ -337,11 +337,9 @@ export function buildHeuristic(ctx: LocationContext): Omit<DemandForecast, "prov
 
 /** Compact signal digest the LLM reasons over (and that we also log for datasets). */
 export function signalDigest(ctx: LocationContext): Record<string, unknown> {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-CA", { hour: "numeric", hour12: false, timeZone: "America/Toronto" }).format(new Date()),
-  );
   return {
-    localHour: hour,
+    now: ctx.now,
+    localHour: ctx.now.hour,
     weather: ctx.weather.data,
     airQuality: ctx.airQuality.data,
     counts: {
@@ -351,6 +349,8 @@ export function signalDigest(ctx: LocationContext): Record<string, unknown> {
       transit: categoryCount(ctx, "transit"),
       alerts: categoryCount(ctx, "alert") + categoryCount(ctx, "safety"),
       bikeshare: groupCount(ctx, "bikeshare"),
+      parking: categoryCount(ctx, "parking"),
+      permits: categoryCount(ctx, "permit") + categoryCount(ctx, "business"),
     },
     highlights: ctx.highlights,
   };
@@ -360,13 +360,17 @@ export function llmPrompt(ctx: LocationContext, business?: BusinessProfile): str
   const digest = signalDigest(ctx);
   const patterns = findSimilarMoments(ctx, 8);
   const patternBlock = historicalPatternBlock(patterns);
+  const n = ctx.now;
   const who = business
     ? `${business.name}, a ${business.businessType} (${business.headcount} staff) at ${business.address}${business.neighbourhood ? `, ${business.neighbourhood}` : ""}.`
     : "a Toronto small business at the given location.";
   return [
     "You are a Toronto demand-forecasting model for small businesses.",
     `Business: ${who}`,
+    `Right now: ${n.weekday} ${n.date}, ${n.time} Toronto time (${n.partOfDay}, ${n.season}, ${n.isWeekend ? "weekend" : "weekday"}).`,
     "Reason over the live signals AND historical patterns below to forecast demand for the next ~12 hours.",
+    "Translate each signal into business impact: weather → walk-ins vs delivery, events/transit → crowd timing,",
+    "construction/alerts → access friction, air quality → outdoor/patio viability. Tailor actions to the business type.",
     "",
     "LIVE SIGNALS (JSON):",
     JSON.stringify(digest, null, 2),

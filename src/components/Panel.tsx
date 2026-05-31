@@ -15,6 +15,8 @@ interface Props {
   note?: string;
   /** Make the tile span the full grid width (e.g. live TV, agent). */
   wide?: boolean;
+  /** When set, the status badge becomes a link opening the raw JSON feed in a new tab. */
+  dataHref?: string;
   children: ComponentChildren;
 }
 
@@ -25,7 +27,7 @@ const STATUS_LABEL: Record<DataStatus, string> = {
   error: "ERR",
 };
 
-export function Panel({ title, status, description, count, updatedAt, note, wide, children }: Props) {
+export function Panel({ title, status, description, count, updatedAt, note, wide, dataHref, children }: Props) {
   return (
     <section class={`panel${wide ? " panel-wide" : ""}`}>
       <header class="panel-header">
@@ -35,10 +37,25 @@ export function Panel({ title, status, description, count, updatedAt, note, wide
         </div>
         <div class="panel-status">
           {count != null && <span class="count-pill">{count}</span>}
-          <span class={`badge badge-${status}`}>
-            <i class="badge-dot" />
-            {STATUS_LABEL[status]}
-          </span>
+          {dataHref ? (
+            <a
+              class={`badge badge-${status} badge-link`}
+              href={dataHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open raw JSON feed in a new tab"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <i class="badge-dot" />
+              {STATUS_LABEL[status]}
+              <span class="badge-link-icon" aria-hidden="true">↗</span>
+            </a>
+          ) : (
+            <span class={`badge badge-${status}`}>
+              <i class="badge-dot" />
+              {STATUS_LABEL[status]}
+            </span>
+          )}
         </div>
       </header>
       <div class="panel-body">{children}</div>

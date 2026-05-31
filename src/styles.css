@@ -2390,6 +2390,23 @@ body.lp-visible #particle-canvas {
 .badge-error { color: var(--red); }
 .badge-error .badge-dot { background: var(--red); }
 
+/* Clickable status badge — deep-links to the raw JSON feed behind the tile. */
+.badge-link {
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.badge-link:hover {
+  border-color: currentColor;
+  background: var(--panel, var(--bg));
+}
+.badge-link-icon {
+  font-size: 8px;
+  opacity: 0.6;
+  margin-left: 1px;
+}
+.badge-link:hover .badge-link-icon { opacity: 1; }
+
 /* ---- Metrics ---- */
 .metric-row {
   display: flex;

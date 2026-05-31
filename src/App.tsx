@@ -69,6 +69,10 @@ export function App() {
 
   const selected = businesses.find((b) => b.id === selectedId) ?? null;
 
+  // Query string mirroring what the tiles fetch — used so each status badge can
+  // deep-link to the exact raw JSON feed behind that tile.
+  const ctxQuery = selectedId ? `businessId=${selectedId}` : "radius=1000";
+
   useEffect(() => {
     api.health().then((h) => setProvider(h.provider)).catch(() => setProvider("offline"));
     api.listBusinesses().then(setBusinesses).catch(() => {});
@@ -180,6 +184,7 @@ export function App() {
           status={forecast ? "live" : "loading"}
           description="Next ~12h demand outlook plus a 7-day structural projection (forecasted weather, Ontario calendar/holidays, scheduled events, persistent transit/construction). Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
           updatedAt={forecast?.generatedAt}
+          dataHref={`/api/forecast?${ctxQuery}`}
           note={forecast ? `${forecast.method === "llm" ? "model-reasoned" : "heuristic"} · ${forecast.provider}/${forecast.model}` : undefined}
         >
           {!forecast ? (
@@ -289,6 +294,7 @@ export function App() {
           title="Live Toronto TV"
           status="live"
           description="Live news streams — CP24, CityNews, Global & CBC — resolved in real time."
+          dataHref="/api/livetv"
         >
           <LiveTV />
         </Panel>
@@ -307,6 +313,7 @@ export function App() {
           description="Where Toronto is busiest right now: a live demand/activity score aggregated per neighbourhood (bike demand, transit, construction, 311, development, events)."
           count={flow?.features.length}
           updatedAt={flow?.generatedAt}
+          dataHref="/api/flow"
         >
           {flow ? (
             <ul class="list">
@@ -337,6 +344,7 @@ export function App() {
           count={eventGroup?.nearby.length}
           updatedAt={eventGroup?.fetchedAt}
           note={eventGroup?.note}
+          dataHref={`/api/context?${ctxQuery}`}
         >
           {!eventGroup ? (
             <div class="muted">Loading…</div>
@@ -368,6 +376,7 @@ export function App() {
           status={context ? "live" : "loading"}
           description="Provenance of every feed powering this dashboard. LIVE = real city/open data."
           count={totalSources}
+          dataHref={`/api/context?${ctxQuery}`}
         >
           {context ? (
             <ul class="list">
@@ -390,13 +399,14 @@ export function App() {
       x: 0,
       y: 24,
       w: 3,
-      h: 3,
+      h: 2,
       content: (
         <Panel
           title="Weather"
           status={context?.weather.status ?? "loading"}
           description="Current conditions at your location from Open-Meteo."
           updatedAt={context?.weather.fetchedAt}
+          dataHref={`/api/context?${ctxQuery}`}
         >
           {context ? (
             <div class="metric-row">
@@ -415,13 +425,14 @@ export function App() {
       x: 3,
       y: 24,
       w: 3,
-      h: 3,
+      h: 2,
       content: (
         <Panel
           title="Air Quality"
           status={context?.airQuality.status ?? "loading"}
           description="US AQI and particulate levels around your business."
           updatedAt={context?.airQuality.fetchedAt}
+          dataHref={`/api/context?${ctxQuery}`}
         >
           {context ? (
             <div class="metric-row">
@@ -449,6 +460,7 @@ export function App() {
           count={g.areaWide ? undefined : g.nearby.length}
           updatedAt={g.fetchedAt}
           note={g.note ?? (g.areaWide ? "City-wide sample (dataset has no coordinates)" : `${g.nearby.length} within ${context!.scope.radiusM}m`)}
+          dataHref={`/api/context?${ctxQuery}`}
         >
           {g.nearby.length === 0 ? (
             <div class="muted">Nothing nearby.</div>

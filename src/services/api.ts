@@ -62,9 +62,21 @@ export interface AirQualityNow {
   category: string;
 }
 
+export interface TemporalContext {
+  iso: string;
+  date: string;
+  time: string;
+  hour: number;
+  weekday: string;
+  partOfDay: "overnight" | "early morning" | "morning" | "midday" | "afternoon" | "evening" | "late night";
+  isWeekend: boolean;
+  season: "winter" | "spring" | "summer" | "fall";
+}
+
 export interface LocationContext {
   scope: { point: { lon: number; lat: number }; radiusM: number; businessType?: string; name?: string };
   generatedAt: string;
+  now: TemporalContext;
   weather: SourceResult<WeatherNow>;
   airQuality: SourceResult<AirQualityNow>;
   civic: CivicGroup[];

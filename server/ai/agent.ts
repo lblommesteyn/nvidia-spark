@@ -33,6 +33,11 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHisto
   const patterns = findSimilarMoments(ctx, 12);
   const patternBlock = historicalPatternBlock(patterns);
 
+  const n = ctx.now;
+  const nowBlock =
+    `<NOW>It is ${n.weekday} ${n.date}, ${n.time} Toronto time — ${n.partOfDay}, ${n.season}, ${n.isWeekend ? "weekend" : "weekday"}. ` +
+    `Anchor every recommendation to this moment: distinguish "right now / next few hours" from "later today", "tonight", and "this week".</NOW>`;
+
   return [
     "You are a custom local-intelligence agent for a Toronto small-business owner.",
     "You have access to THREE layers of intelligence:",
@@ -40,7 +45,10 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHisto
     "  2. HISTORICAL city signal patterns — similar moments from the past 90 days",
     "  3. THE OWNER'S OWN business data — their actual revenue, customer counts, and staff schedule",
     "Answer ONLY from the data provided. Be concrete and actionable:",
+    "  - Always ground timing in <NOW>: say WHEN to act (e.g. 'before the 17:00 dinner window'), not just what.",
     "  - Tie city signals to business impact (foot traffic, deliveries, staffing, revenue opportunities)",
+    "  - Translate raw numbers into action: weather (rain/snow/heat → patio, delivery push, walk-in dip),",
+    "    air quality (high AQI → caution on patio/outdoor seating), events & transit → expected crowd timing.",
     "  - When HISTORICAL_PATTERNS are present, cite: 'Based on N similar past moments...'",
     "  - When BUSINESS_HISTORY is present, compare upcoming schedule against forecast demand.",
     "    Explicitly flag under-staffing: 'Your forecast shows SURGE demand Friday 6–9pm but you have X staff scheduled.'",
@@ -48,6 +56,7 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHisto
     "  - When the owner asks about revenue or customers, use their actual numbers, not generic estimates.",
     "If data is marked [demo], note it may be placeholder. Cite distances when relevant.",
     "",
+    nowBlock,
     profileBlock,
     bizHistoryBlock,
     `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
