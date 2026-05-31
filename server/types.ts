@@ -60,6 +60,31 @@ export interface BusinessProfile {
   headcount: number;
   /** Free-form notes the owner provides to tailor the agent. */
   notes?: string;
+
+  // --- Demand-model inputs (CityFlow gradient-boosting staffing model) ---
+  /** Opening hour, 0-23. */
+  opensAt?: number;
+  /** Closing hour, 0-23. */
+  closesAt?: number;
+  /** Radius (km) within which nearby events affect demand. */
+  eventRadiusKm?: number;
+  /** Customers a single worker can serve per hour (service rate). */
+  customersPerWorkerHour?: number;
+  /** Hourly wage in CAD. */
+  hourlyWage?: number;
+  /** Minimum staff on the floor whenever open. */
+  minStaff?: number;
+  /** Maximum staff per hour (optional cap). */
+  maxStaffPerHour?: number;
+  /** Allowed shift lengths in hours (e.g. [4, 6, 8]). */
+  allowedShiftLengths?: number[];
+
+  // --- Derived from the geocoded address (not user-entered) ---
+  /** Qualitative transit access label: high | medium | low | minimal. */
+  transitRelevance?: string;
+  /** Nearby TTC/GO route names, nearest first. */
+  nearbyRoutes?: string[];
+
   createdAt: string;
   updatedAt: string;
 }

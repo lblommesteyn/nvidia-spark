@@ -40,10 +40,43 @@ db.exec(`
     neighbourhood TEXT,
     headcount     INTEGER NOT NULL DEFAULT 1,
     notes         TEXT,
+    opens_at                  INTEGER,
+    closes_at                 INTEGER,
+    event_radius_km           REAL,
+    customers_per_worker_hour REAL,
+    hourly_wage               REAL,
+    min_staff                 INTEGER,
+    max_staff_per_hour        INTEGER,
+    allowed_shift_lengths     TEXT,
+    transit_relevance         TEXT,
+    nearby_routes             TEXT,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
   );
 `);
+
+// Lightweight migration: add demand-model columns to businesses tables that
+// predate them (CREATE TABLE IF NOT EXISTS won't alter an existing table).
+{
+  const existing = new Set(
+    (db.prepare("PRAGMA table_info(businesses)").all() as { name: string }[]).map((r) => r.name),
+  );
+  const additions: Record<string, string> = {
+    opens_at: "INTEGER",
+    closes_at: "INTEGER",
+    event_radius_km: "REAL",
+    customers_per_worker_hour: "REAL",
+    hourly_wage: "REAL",
+    min_staff: "INTEGER",
+    max_staff_per_hour: "INTEGER",
+    allowed_shift_lengths: "TEXT",
+    transit_relevance: "TEXT",
+    nearby_routes: "TEXT",
+  };
+  for (const [col, type] of Object.entries(additions)) {
+    if (!existing.has(col)) db.exec(`ALTER TABLE businesses ADD COLUMN ${col} ${type}`);
+  }
+}
 
 interface Row {
   id: string;
@@ -56,8 +89,38 @@ interface Row {
   neighbourhood: string | null;
   headcount: number;
   notes: string | null;
+  opens_at: number | null;
+  closes_at: number | null;
+  event_radius_km: number | null;
+  customers_per_worker_hour: number | null;
+  hourly_wage: number | null;
+  min_staff: number | null;
+  max_staff_per_hour: number | null;
+  allowed_shift_lengths: string | null;
+  transit_relevance: string | null;
+  nearby_routes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+function parseNumArray(json: string | null): number[] | undefined {
+  if (!json) return undefined;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((n) => typeof n === "number") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseStrArray(json: string | null): string[] | undefined {
+  if (!json) return undefined;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((s) => typeof s === "string") : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function toProfile(r: Row): BusinessProfile {
@@ -72,6 +135,16 @@ function toProfile(r: Row): BusinessProfile {
     neighbourhood: r.neighbourhood ?? undefined,
     headcount: r.headcount,
     notes: r.notes ?? undefined,
+    opensAt: r.opens_at ?? undefined,
+    closesAt: r.closes_at ?? undefined,
+    eventRadiusKm: r.event_radius_km ?? undefined,
+    customersPerWorkerHour: r.customers_per_worker_hour ?? undefined,
+    hourlyWage: r.hourly_wage ?? undefined,
+    minStaff: r.min_staff ?? undefined,
+    maxStaffPerHour: r.max_staff_per_hour ?? undefined,
+    allowedShiftLengths: parseNumArray(r.allowed_shift_lengths),
+    transitRelevance: r.transit_relevance ?? undefined,
+    nearbyRoutes: parseStrArray(r.nearby_routes),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -101,8 +174,14 @@ export const businesses = {
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO businesses
-        (id, name, business_type, address, lon, lat, ward, neighbourhood, headcount, notes, created_at, updated_at)
-       VALUES (@id, @name, @business_type, @address, @lon, @lat, @ward, @neighbourhood, @headcount, @notes, @created_at, @updated_at)`,
+        (id, name, business_type, address, lon, lat, ward, neighbourhood, headcount, notes,
+         opens_at, closes_at, event_radius_km, customers_per_worker_hour, hourly_wage,
+         min_staff, max_staff_per_hour, allowed_shift_lengths, transit_relevance, nearby_routes,
+         created_at, updated_at)
+       VALUES (@id, @name, @business_type, @address, @lon, @lat, @ward, @neighbourhood, @headcount, @notes,
+         @opens_at, @closes_at, @event_radius_km, @customers_per_worker_hour, @hourly_wage,
+         @min_staff, @max_staff_per_hour, @allowed_shift_lengths, @transit_relevance, @nearby_routes,
+         @created_at, @updated_at)`,
     ).run({
       id,
       name: input.name,
@@ -114,6 +193,20 @@ export const businesses = {
       neighbourhood: input.neighbourhood ?? null,
       headcount: input.headcount,
       notes: input.notes ?? null,
+      opens_at: input.opensAt ?? null,
+      closes_at: input.closesAt ?? null,
+      event_radius_km: input.eventRadiusKm ?? null,
+      customers_per_worker_hour: input.customersPerWorkerHour ?? null,
+      hourly_wage: input.hourlyWage ?? null,
+      min_staff: input.minStaff ?? null,
+      max_staff_per_hour: input.maxStaffPerHour ?? null,
+      allowed_shift_lengths:
+        input.allowedShiftLengths && input.allowedShiftLengths.length
+          ? JSON.stringify(input.allowedShiftLengths)
+          : null,
+      transit_relevance: input.transitRelevance ?? null,
+      nearby_routes:
+        input.nearbyRoutes && input.nearbyRoutes.length ? JSON.stringify(input.nearbyRoutes) : null,
       created_at: now,
       updated_at: now,
     });

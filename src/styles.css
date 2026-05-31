@@ -2960,8 +2960,109 @@ body.lp-visible #particle-canvas {
 .modal select:focus,
 .modal textarea:focus { outline: none; border-color: var(--green); }
 .form-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .form-error { color: var(--red); font-size: 11px; }
+
+/* Wider modal for the richer business-setup form, with a scroll cap. */
+.modal-wide {
+  width: min(560px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Section divider inside the form */
+.form-section-title {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--green);
+}
+
+/* Standalone labelled block (e.g. shift-length checkboxes) */
+.field-block { display: flex; flex-direction: column; gap: 6px; }
+.field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.checkbox-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.checkbox-pill {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 11px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: var(--text) !important;
+}
+.checkbox-pill input { accent-color: var(--green); width: 13px; height: 13px; }
+
+/* Small inline button (transit lookup) */
+.btn-mini {
+  padding: 4px 9px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--green);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.btn-mini:hover:not(:disabled) { border-color: var(--green); }
+.btn-mini:disabled { opacity: 0.4; cursor: default; }
+
+/* Transit relevance / nearby routes preview box */
+.transit-box {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.transit-head { display: flex; align-items: center; justify-content: space-between; }
+.transit-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.transit-empty { font-size: 11px; }
+.transit-body { display: flex; flex-direction: column; gap: 8px; }
+.transit-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.transit-badge.rel-high { color: var(--green); border-color: #0f3320; background: #0c1f16; }
+.transit-badge.rel-medium { color: #ffd166; border-color: #3a3015; background: #1f1a0c; }
+.transit-badge.rel-low { color: #9fb0c0; border-color: #243240; background: #0c141c; }
+.transit-badge.rel-minimal { color: var(--text-faint); }
+.transit-routes { display: flex; flex-wrap: wrap; gap: 6px; }
+.route-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+}
+.route-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
 /* MapLibre control tweaks to fit the dark theme */
 .maplibregl-ctrl-attrib { font-size: 9px !important; }
