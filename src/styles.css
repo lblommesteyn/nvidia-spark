@@ -1918,17 +1918,33 @@ body.lp-visible #particle-canvas {
 }
 
 .provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-dim);
-  text-transform: lowercase;
-  letter-spacing: 0.5px;
+  text-transform: none;
+  letter-spacing: 0.3px;
+  max-width: 420px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.provider-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 .provider-mock { color: var(--amber); border-color: #3a2e00; }
 .provider-openai,
 .provider-anthropic,
+.provider-nemotron,
 .provider-ollama { color: var(--green); border-color: #0f3320; }
 .provider-offline { color: var(--red); border-color: #3a0f0f; }
 
@@ -1975,11 +1991,18 @@ body.lp-visible #particle-canvas {
   flex-direction: column;
 }
 
-/* ---- Map section ---- */
+/* ---- Map section ----
+ * Tall, sticky "hero": it pins to the top of the scroll area while the tile
+ * grid scrolls up over it. The translucent top tiles let the live map show
+ * through as they pass over it; opaque tiles below cover it cleanly. Keep
+ * z-index below the grid so the tiles win the overlap.
+ */
 .map-section {
-  position: relative;
-  height: 48vh;
-  min-height: 280px;
+  position: sticky;
+  top: 0;
+  z-index: 0;
+  height: 62vh;
+  min-height: 340px;
   border-bottom: 1px solid var(--border);
   flex: none;
 }
@@ -2076,7 +2099,7 @@ body.lp-visible #particle-canvas {
 .layer-toggle {
   position: absolute;
   left: 8px;
-  bottom: 38px;
+  bottom: 96px;
   background: rgba(10, 10, 10, 0.88);
   border: 1px solid var(--border);
   padding: 7px 9px;
@@ -2175,7 +2198,7 @@ body.lp-visible #particle-canvas {
 .map-legend {
   position: absolute;
   left: 50%;
-  bottom: 10px;
+  top: 10px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -2251,6 +2274,11 @@ body.lp-visible #particle-canvas {
 
 /* ---- Dashboard grid (Gridstack) ---- */
 .dashboard-grid {
+  position: relative;
+  z-index: 1;
+  /* Pull the grid up so its top row gently overlaps the bottom of the sticky
+     map; the translucent agent/alerts tiles then "float" over the live map. */
+  margin-top: -72px;
   padding: 4px;
 }
 
@@ -2274,6 +2302,40 @@ body.lp-visible #particle-canvas {
   cursor: move;
 }
 
+/* ---- Top tiles: frosted glass so the live map shows through as they scroll
+ * over it. The agent tile additionally gets a "hero" glow — it's the product's
+ * centrepiece. Scoped by gs-id so it applies in both the live and empty states. */
+.grid-stack-item[gs-id="agent"] .panel,
+.grid-stack-item[gs-id="alerts"] .panel {
+  background: rgba(12, 17, 26, 0.64);
+  backdrop-filter: blur(12px) saturate(1.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+}
+.grid-stack-item[gs-id="alerts"] .panel-header {
+  background: rgba(18, 26, 38, 0.5);
+}
+
+/* Flagship agent tile */
+.grid-stack-item[gs-id="agent"] .panel {
+  border: 1px solid rgba(54, 211, 153, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(54, 211, 153, 0.12),
+    0 18px 50px -12px rgba(0, 0, 0, 0.7),
+    0 0 46px -8px rgba(54, 211, 153, 0.28);
+}
+.grid-stack-item[gs-id="agent"] .panel-header {
+  background: linear-gradient(180deg, rgba(54, 211, 153, 0.16), rgba(18, 26, 38, 0.55));
+  border-bottom-color: rgba(54, 211, 153, 0.3);
+}
+.grid-stack-item[gs-id="agent"] .panel-title {
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+.grid-stack-item[gs-id="agent"] .panel-title::before {
+  content: "★ ";
+  color: var(--green);
+}
+
 /* Gridstack resize handles → subtle, on-theme */
 .grid-stack > .grid-stack-item > .ui-resizable-handle {
   opacity: 0;
@@ -2288,9 +2350,12 @@ body.lp-visible #particle-canvas {
 }
 
 .grid-hint {
-  padding: 2px 8px 8px;
+  flex: none;
+  padding: 6px 12px;
   font-size: 10px;
   color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 .linklike {
   background: none;
