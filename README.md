@@ -1,8 +1,6 @@
-![alt text](<image.png>)
+![CityFlow — Toronto Monitor dashboard](image.png)
 
 # CityFlow — Toronto Monitor
-
-
 
 **A real-time City of Toronto civic-intelligence dashboard with a per-business AI agent.**
 A business owner enters their address, type, and team size, and gets a live map,
