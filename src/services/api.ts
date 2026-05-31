@@ -469,4 +469,21 @@ export const api = {
     }
     return res.json() as Promise<{ text: string }>;
   },
+
+  nearestCamera: (lon: number, lat: number) =>
+    fetch(`/api/cameras/nearest?lon=${lon}&lat=${lat}&n=1`).then(
+      json<TrafficCamera[]>,
+    ),
 };
+
+export interface TrafficCamera {
+  recId: number;
+  name: string;
+  mainRoad: string;
+  crossRoad: string;
+  lon: number;
+  lat: number;
+  distanceM: number;
+  /** Same-origin proxy URL for the latest snapshot. */
+  imageUrl: string;
+}

@@ -32,6 +32,7 @@ import {
 import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
 import { parakeetHealth, parakeetTranscribe, PARAKEET_BASE } from "./ai/parakeet.ts";
+import { nearestCameras, cameraImageUrl } from "./sources/cameras.ts";
 import { rlOptimizer } from "./ai/rloptimizer.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
@@ -406,6 +407,56 @@ app.post("/api/asr/transcribe", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "transcription failed";
     return c.json({ error: msg }, 503);
+  }
+});
+
+// ---- Traffic cameras (nearest CCTV to a business) ----
+app.get("/api/cameras/nearest", async (c) => {
+  const lon = Number(c.req.query("lon"));
+  const lat = Number(c.req.query("lat"));
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    return c.json({ error: "lon and lat query params required" }, 400);
+  }
+  const n = Math.min(Math.max(Number(c.req.query("n") ?? 1), 1), 5);
+  try {
+    const cams = await nearestCameras({ lon, lat }, n);
+    // Hand back our same-origin image proxy, not the upstream URL.
+    return c.json(
+      cams.map((cam) => ({
+        recId: cam.recId,
+        name: cam.name,
+        mainRoad: cam.mainRoad,
+        crossRoad: cam.crossRoad,
+        lon: cam.lon,
+        lat: cam.lat,
+        distanceM: Math.round(cam.distanceM),
+        imageUrl: `/api/cameras/${cam.recId}/image`,
+      })),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "camera list unavailable";
+    return c.json({ error: msg }, 503);
+  }
+});
+
+// Same-origin proxy for a known camera's latest snapshot (fresh https frame).
+app.get("/api/cameras/:recId/image", async (c) => {
+  const recId = Number(c.req.param("recId"));
+  if (!Number.isFinite(recId)) return c.json({ error: "bad camera id" }, 400);
+  const url = await cameraImageUrl(recId);
+  if (!url) return c.json({ error: "unknown camera" }, 404);
+  try {
+    const upstream = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!upstream.ok) {
+      return c.json({ error: `camera image HTTP ${upstream.status}` }, 502);
+    }
+    const bytes = await upstream.arrayBuffer();
+    return c.body(bytes, 200, {
+      "content-type": upstream.headers.get("content-type") ?? "image/jpeg",
+      "cache-control": "public, max-age=20",
+    });
+  } catch {
+    return c.json({ error: "camera image unreachable" }, 502);
   }
 });
 
