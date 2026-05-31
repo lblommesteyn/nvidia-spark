@@ -376,6 +376,43 @@ export const api = {
       body: JSON.stringify(body),
     }).then(json<AgentAnswer>),
 
+  /**
+   * Streaming agent. Calls `onEvent` for each SSE frame as tokens arrive
+   * (`delta`), once for metadata (`provider`/`model`), and a final `done`.
+   * Resolves when the stream closes.
+   */
+  agentStream: async (
+    body: { question: string; businessId: string; radiusM?: number },
+    onEvent: (e: { delta?: string; provider?: string; model?: string; done?: boolean; error?: string }) => void,
+  ): Promise<void> => {
+    const res = await fetch("/api/agent/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        const line = frame.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        try {
+          onEvent(JSON.parse(line.slice(5).trim()));
+        } catch {
+          /* ignore malformed frame */
+        }
+      }
+    }
+  },
+
   bizHistory: (businessId: string) =>
     fetch(`/api/businesses/${businessId}/history`).then(json<{
       summary: {

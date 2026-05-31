@@ -1,5 +1,5 @@
 import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
-import { chat, type ChatResult } from "./provider.ts";
+import { chat, type ChatMessage, type ChatOptions, type ChatResult } from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businessHistoryBlock } from "./bizdata.ts";
 import { weekForecastForBusiness } from "./forecast.ts";
@@ -14,6 +14,12 @@ export interface AgentAnswer extends ChatResult {
     radiusM: number;
     highlights: string[];
   };
+}
+
+export interface AgentRequest {
+  messages: ChatMessage[];
+  opts: ChatOptions;
+  contextUsed: AgentAnswer["contextUsed"];
 }
 
 function weekForecastBlock(businessId: string, week: Awaited<ReturnType<typeof weekForecastForBusiness>>): string {
@@ -94,11 +100,11 @@ function systemPrompt(
   ].filter(Boolean).join("\n");
 }
 
-export async function askForBusiness(
+export async function buildBusinessAgentRequest(
   businessId: string,
   question: string,
   radiusM = 750,
-): Promise<AgentAnswer> {
+): Promise<AgentRequest> {
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
   const scope = scopeFromBusiness(business, radiusM);
@@ -114,15 +120,12 @@ export async function askForBusiness(
   const researchBlock = getResearchBlock(businessId);
   const weekBlock = weekForecastBlock(businessId, week);
 
-  const result = await chat(
-    [
+  return {
+    messages: [
       { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock }) },
       { role: "user", content: question },
     ],
-    { reasoning: false, maxTokens: 1536 },
-  );
-  return {
-    ...result,
+    opts: { reasoning: false, maxTokens: 1536 },
     contextUsed: {
       name: business.name,
       businessType: business.businessType,
@@ -130,6 +133,16 @@ export async function askForBusiness(
       highlights: ctx.highlights,
     },
   };
+}
+
+export async function askForBusiness(
+  businessId: string,
+  question: string,
+  radiusM = 750,
+): Promise<AgentAnswer> {
+  const { messages, opts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM);
+  const result = await chat(messages, opts);
+  return { ...result, contextUsed };
 }
 
 export async function askForPoint(

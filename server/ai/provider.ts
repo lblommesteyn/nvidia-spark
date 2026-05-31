@@ -60,6 +60,245 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
   }
 }
 
+/** Provider + model identity without making a call (for streaming metadata). */
+export function describeProvider(): { provider: string; model: string } {
+  const provider = activeProvider();
+  switch (provider) {
+    case "nemotron":
+      return { provider, model: process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1" };
+    case "openai":
+      return { provider, model: process.env.OPENAI_MODEL ?? "gpt-4o-mini" };
+    case "anthropic":
+      return { provider, model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest" };
+    case "ollama":
+      return { provider, model: process.env.OLLAMA_MODEL ?? "llama3.1" };
+    default:
+      return { provider: "mock", model: "rule-based" };
+  }
+}
+
+/**
+ * Streaming counterpart to chat(): yields text deltas as the model produces
+ * them, so the UI can render tokens live instead of waiting for the whole
+ * answer. Nemotron/OpenAI/Ollama stream natively; Anthropic falls back to a
+ * single chunk; the mock simulates streaming so local dev feels the same.
+ */
+export async function* chatStream(messages: ChatMessage[], opts: ChatOptions = {}): AsyncGenerator<string> {
+  const provider = activeProvider();
+  switch (provider) {
+    case "nemotron":
+      yield* nemotronStream(messages, opts);
+      return;
+    case "openai":
+      yield* openaiStream(messages, opts);
+      return;
+    case "ollama":
+      yield* ollamaStream(messages);
+      return;
+    case "anthropic": {
+      // Anthropic uses a different SSE schema; keep it simple and non-streamed.
+      const { text } = await anthropic(messages, opts);
+      yield text;
+      return;
+    }
+    default:
+      yield* mockStream(messages);
+      return;
+  }
+}
+
+/**
+ * Reads an OpenAI-compatible Chat Completions SSE stream (used by Nemotron NIM
+ * and OpenAI), yielding the incremental `choices[0].delta.content` text.
+ */
+async function* openAISSE(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown,
+  timeoutMs: number,
+): AsyncGenerator<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} (stream)`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const json = JSON.parse(data);
+          const delta = json.choices?.[0]?.delta?.content ?? "";
+          if (delta) yield delta as string;
+        } catch {
+          /* keep-alive comment or partial frame — ignore */
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function* nemotronStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
+  const base = (process.env.NEMOTRON_BASE_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
+  const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
+  const directive = opts.reasoning === undefined ? null : `detailed thinking ${opts.reasoning ? "on" : "off"}`;
+  const msgs = directive ? [{ role: "system" as const, content: directive }, ...messages] : messages;
+  const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
+  const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const payload = {
+    model,
+    messages: msgs,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 1024,
+    stream: true,
+  };
+  // Strip <think>…</think> reasoning traces incrementally across chunk boundaries.
+  const stripper = makeThinkStripper();
+  for await (const raw of openAISSE(`${base}/chat/completions`, headers, payload, 120_000)) {
+    const clean = stripper.push(raw);
+    if (clean) yield clean;
+  }
+  const tail = stripper.flush();
+  if (tail) yield tail;
+}
+
+async function* openaiStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
+  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    Accept: "text/event-stream",
+  };
+  const payload = {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens,
+    stream: true,
+  };
+  yield* openAISSE("https://api.openai.com/v1/chat/completions", headers, payload, 60_000);
+}
+
+async function* ollamaStream(messages: ChatMessage[]): AsyncGenerator<string> {
+  const host = process.env.OLLAMA_HOST ?? "http://localhost:11434";
+  const model = process.env.OLLAMA_MODEL ?? "llama3.1";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(`${host}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, stream: true }),
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} (stream)`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      // Ollama streams newline-delimited JSON objects (not SSE).
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const json = JSON.parse(line);
+          const delta = json.message?.content ?? "";
+          if (delta) yield delta as string;
+        } catch {
+          /* partial line — ignore */
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Simulated streaming for the no-key mock, so local dev streams too. */
+async function* mockStream(messages: ChatMessage[]): AsyncGenerator<string> {
+  const { text } = mock(messages);
+  const tokens = text.match(/\S+\s*|\s+/g) ?? [text];
+  for (const tok of tokens) {
+    yield tok;
+    await new Promise((r) => setTimeout(r, 12));
+  }
+}
+
+/**
+ * Incremental <think>…</think> remover for streamed text. Holds back a small
+ * tail so a tag split across chunk boundaries is still caught.
+ */
+function makeThinkStripper() {
+  let inThink = false;
+  let buf = "";
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  return {
+    push(chunk: string): string {
+      buf += chunk;
+      let out = "";
+      for (;;) {
+        if (inThink) {
+          const end = buf.indexOf(CLOSE);
+          if (end === -1) {
+            // Stay in think mode; keep only enough tail to match a split </think>.
+            if (buf.length > CLOSE.length) buf = buf.slice(-CLOSE.length);
+            return out;
+          }
+          buf = buf.slice(end + CLOSE.length);
+          inThink = false;
+        } else {
+          const start = buf.indexOf(OPEN);
+          if (start === -1) {
+            // Emit everything except a tail that might be a partial "<think>".
+            const keep = OPEN.length - 1;
+            if (buf.length > keep) {
+              out += buf.slice(0, buf.length - keep);
+              buf = buf.slice(buf.length - keep);
+            }
+            return out;
+          }
+          out += buf.slice(0, start);
+          buf = buf.slice(start + OPEN.length);
+          inThink = true;
+        }
+      }
+    },
+    flush(): string {
+      if (inThink) {
+        buf = "";
+        return "";
+      }
+      const out = buf;
+      buf = "";
+      return out;
+    },
+  };
+}
+
 /**
  * NVIDIA Nemotron via an OpenAI-compatible endpoint (NIM). Designed to run
  * against a Nemotron model served locally on the GX10 / DGX Spark, so the agent

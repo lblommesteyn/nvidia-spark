@@ -6,6 +6,7 @@ interface Msg {
   role: "user" | "agent";
   text: string;
   provider?: string;
+  streaming?: boolean;
 }
 
 interface HistoryRow {
@@ -129,16 +130,33 @@ export function AgentChat({ business }: { business: Business }) {
   async function ask(question: string) {
     if (!question.trim() || busy) return;
     setInput("");
-    setMessages((m) => [...m, { role: "user", text: question }]);
+    setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
     setBusy(true);
-    try {
-      const res = await api.agent({ businessId: business.id, question });
-      setMessages((m) => [...m, { role: "agent", text: res.text, provider: res.provider }]);
-    } catch (err) {
-      setMessages((m) => [...m, { role: "agent", text: `Error: ${err instanceof Error ? err.message : "failed"}` }]);
-    } finally {
-      setBusy(false);
+
+    // All updates target the single in-flight streaming agent message.
+    const patch = (fn: (msg: Msg) => Msg) =>
+      setMessages((m) => m.map((msg) => (msg.streaming ? fn(msg) : msg)));
+    const scrollDown = () =>
       requestAnimationFrame(() => scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight));
+
+    try {
+      await api.agentStream({ businessId: business.id, question }, (e) => {
+        if (e.error) {
+          patch((msg) => ({ ...msg, text: `Error: ${e.error}`, streaming: false }));
+          return;
+        }
+        if (e.provider) patch((msg) => ({ ...msg, provider: e.provider }));
+        if (e.delta) {
+          patch((msg) => ({ ...msg, text: msg.text + e.delta }));
+          scrollDown();
+        }
+      });
+    } catch (err) {
+      patch((msg) => ({ ...msg, text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false }));
+    } finally {
+      patch((msg) => ({ ...msg, streaming: false }));
+      setBusy(false);
+      scrollDown();
     }
   }
 
@@ -292,12 +310,18 @@ export function AgentChat({ business }: { business: Business }) {
         {messages.map((m, i) => (
           <div key={i} class={`bubble bubble-${m.role}`}>
             {m.role === "agent" && m.provider && <span class="bubble-tag">{m.provider}</span>}
-            {m.role === "agent"
-              ? <Markdown class="bubble-text" text={m.text} />
-              : <div class="bubble-text">{m.text}</div>}
+            {m.role !== "agent" ? (
+              <div class="bubble-text">{m.text}</div>
+            ) : m.streaming && !m.text ? (
+              <div class="bubble-text muted">Thinking<span class="stream-dots" /></div>
+            ) : (
+              <div class="bubble-text">
+                <Markdown text={m.text} />
+                {m.streaming && <span class="stream-caret" />}
+              </div>
+            )}
           </div>
         ))}
-        {busy && <div class="bubble bubble-agent"><div class="bubble-text muted">Thinking…</div></div>}
       </div>
 
       <form class="chat-input" onSubmit={(e) => { e.preventDefault(); ask(input); }}>

@@ -142,5 +142,9 @@ function parseBlocks(src: string): VNode[] {
 }
 
 export function Markdown({ text, class: cls }: { text: string; class?: string }) {
+  // Reset per render so keys are deterministic by position — critical during
+  // streaming, where this component re-renders on every token and we want the
+  // existing DOM nodes to be reused (stable keys) rather than remounted.
+  keySeq = 0;
   return <div class={cls ? `md ${cls}` : "md"}>{parseBlocks(text ?? "")}</div>;
 }

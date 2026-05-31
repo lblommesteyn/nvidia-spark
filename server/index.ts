@@ -18,7 +18,7 @@ import {
   weekForecastForPoint,
 } from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
-import { askForBusiness, askForPoint } from "./ai/agent.ts";
+import { askForBusiness, askForPoint, buildBusinessAgentRequest } from "./ai/agent.ts";
 import { enqueueBusinessResearch, researchStatus, runBusinessResearch } from "./ai/web-agent.ts";
 import { findSimilarMoments } from "./ai/patterns.ts";
 import { startSnapshotService } from "./ai/snapshot.ts";
@@ -29,7 +29,7 @@ import {
   unregisterSseClient,
   sseClientCount,
 } from "./ai/alerts.ts";
-import { activeProvider } from "./ai/provider.ts";
+import { activeProvider, chatStream, describeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
 
@@ -377,6 +377,58 @@ app.post("/api/agent", async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "agent error" }, 500);
   }
+});
+
+// Streaming agent — emits SSE frames with `delta` tokens as the model generates
+// them, so the chat UI renders the answer live instead of waiting for the full
+// response. Falls back to the non-streaming /api/agent for point-only queries.
+app.post("/api/agent/stream", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body?.question) return c.json({ error: "question required" }, 400);
+  if (!body.businessId) return c.json({ error: "businessId required for streaming" }, 400);
+  const radiusM = Number(body.radiusM) || 750;
+
+  const stream = new ReadableStream<string>({
+    async start(controller) {
+      const send = (obj: unknown) => {
+        try {
+          controller.enqueue(`data: ${JSON.stringify(obj)}\n\n`);
+        } catch {
+          /* client disconnected */
+        }
+      };
+      try {
+        const { messages, opts, contextUsed } = await buildBusinessAgentRequest(
+          body.businessId,
+          body.question,
+          radiusM,
+        );
+        const { provider, model } = describeProvider();
+        send({ meta: true, provider, model, contextUsed });
+        for await (const delta of chatStream(messages, opts)) {
+          send({ delta });
+        }
+        send({ done: true });
+      } catch (err) {
+        send({ error: err instanceof Error ? err.message : "agent error" });
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      }
+    },
+  });
+
+  return new Response(stream as unknown as ReadableStream<Uint8Array>, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 });
 
 function pointFromQuery(lon?: string, lat?: string): GeoPoint {
