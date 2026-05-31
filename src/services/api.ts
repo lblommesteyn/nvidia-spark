@@ -11,8 +11,30 @@ export interface Business {
   neighbourhood?: string;
   headcount: number;
   notes?: string;
+  // Demand-model inputs
+  opensAt?: number;
+  closesAt?: number;
+  eventRadiusKm?: number;
+  customersPerWorkerHour?: number;
+  hourlyWage?: number;
+  minStaff?: number;
+  maxStaffPerHour?: number;
+  allowedShiftLengths?: number[];
+  // Derived from address
+  transitRelevance?: string;
+  nearbyRoutes?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TransitNearby {
+  lon: number;
+  lat: number;
+  address?: string;
+  relevance: "high" | "medium" | "low" | "minimal";
+  score: number;
+  nearestM: number | null;
+  routes: { id: string; name: string; mode: "subway" | "streetcar" | "go"; color: string; distanceM: number }[];
 }
 
 export interface CivicRecord {
@@ -291,12 +313,23 @@ export const api = {
     address: string;
     headcount: number;
     notes?: string;
+    opensAt?: number;
+    closesAt?: number;
+    eventRadiusKm?: number;
+    customersPerWorkerHour?: number;
+    hourlyWage?: number;
+    minStaff?: number;
+    maxStaffPerHour?: number;
+    allowedShiftLengths?: number[];
   }) =>
     fetch("/api/businesses", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     }).then(json<Business>),
+
+  transitNearby: (address: string) =>
+    fetch(`/api/transit/nearby?address=${encodeURIComponent(address)}`).then(json<TransitNearby>),
 
   businessResearch: (businessId: string) =>
     fetch(`/api/businesses/${businessId}/research`).then(

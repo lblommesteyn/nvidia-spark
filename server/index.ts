@@ -9,6 +9,7 @@ import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
 import { computeFlow } from "./sources/neighbourhoods.ts";
 import { getTraffic } from "./sources/traffic.ts";
 import { getTransitRoutes } from "./sources/transit-routes.ts";
+import { transitContext } from "./sources/transit-nearby.ts";
 import { getGoTrains } from "./sources/go-transit.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
 import {
@@ -80,6 +81,24 @@ app.get("/api/geocode", async (c) => {
   if (!q) return c.json({ error: "q required" }, 400);
   const result = await geocode(q);
   return result ? c.json(result) : c.json({ error: "not found in Toronto" }, 404);
+});
+
+// Derive transit relevance + nearby TTC/GO routes for a point (by address or coords).
+// Powers the live "transit" preview on the business setup form.
+app.get("/api/transit/nearby", async (c) => {
+  let lon = Number(c.req.query("lon"));
+  let lat = Number(c.req.query("lat"));
+  let address = c.req.query("address") ?? undefined;
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    if (!address) return c.json({ error: "address or lon/lat required" }, 400);
+    const geo = await geocode(address);
+    if (!geo) return c.json({ error: "could not geocode address within Toronto" }, 422);
+    lon = geo.lon;
+    lat = geo.lat;
+    address = geo.displayName ?? address;
+  }
+  const ctx = transitContext({ lon, lat });
+  return c.json({ lon, lat, address, ...ctx });
 });
 
 // ---- Environment ----
@@ -281,6 +300,11 @@ app.post("/api/businesses", async (c) => {
     lat = geo.lat;
     neighbourhood = neighbourhood ?? geo.neighbourhood;
   }
+
+  // Always derive transit context server-side from the final coords so the
+  // stored values are authoritative (not trusted from the client preview).
+  const transit = transitContext({ lon, lat });
+
   const input: BusinessInput = {
     name: body.name,
     businessType: body.businessType,
@@ -291,6 +315,16 @@ app.post("/api/businesses", async (c) => {
     neighbourhood,
     headcount: Number(body.headcount) || 1,
     notes: body.notes,
+    opensAt: clampHour(body.opensAt),
+    closesAt: clampHour(body.closesAt),
+    eventRadiusKm: posNum(body.eventRadiusKm),
+    customersPerWorkerHour: posNum(body.customersPerWorkerHour),
+    hourlyWage: posNum(body.hourlyWage),
+    minStaff: posInt(body.minStaff),
+    maxStaffPerHour: posInt(body.maxStaffPerHour),
+    allowedShiftLengths: cleanShiftLengths(body.allowedShiftLengths),
+    transitRelevance: transit.relevance,
+    nearbyRoutes: transit.routes.map((r) => r.name),
   };
   const created = businesses.create(input);
   enqueueBusinessResearch(created);
@@ -593,6 +627,27 @@ function pointFromQuery(lon?: string, lat?: string): GeoPoint {
   const x = Number(lon);
   const y = Number(lat);
   return Number.isFinite(x) && Number.isFinite(y) ? { lon: x, lat: y } : TORONTO;
+}
+
+// ---- Demand-model input sanitizers (business setup form) ----
+function clampHour(v: unknown): number | undefined {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= 23 ? n : undefined;
+}
+function posNum(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+function posInt(v: unknown): number | undefined {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+function cleanShiftLengths(v: unknown): number[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const cleaned = [...new Set(v.map((x) => Math.round(Number(x))).filter((n) => n > 0 && n <= 24))].sort(
+    (a, b) => a - b,
+  );
+  return cleaned.length ? cleaned : undefined;
 }
 
 // ---- Proactive alerts ----
