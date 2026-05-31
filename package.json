@@ -13,6 +13,7 @@
     "gen:dataset": "tsx scripts/gen-forecast-dataset.ts",
     "snapshot": "tsx scripts/snapshot-logger.ts",
     "backfill": "tsx scripts/backfill_snapshots.ts",
+    "gen:bizdata": "tsx scripts/gen_business_data.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {

@@ -1,7 +1,8 @@
 import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
 import { chat, type ChatResult } from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
-import { businesses } from "../db.ts";
+import { businessHistoryBlock } from "./bizdata.ts";
+import { businesses, businessHistory, businessSchedule } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
 export interface AgentAnswer extends ChatResult {
@@ -13,7 +14,7 @@ export interface AgentAnswer extends ChatResult {
   };
 }
 
-function systemPrompt(ctx: LocationContext, business?: BusinessProfile): string {
+function systemPrompt(ctx: LocationContext, business?: BusinessProfile, bizHistoryBlock = ""): string {
   const profileBlock = business
     ? `<BUSINESS>${business.name} — a ${business.businessType} with ${business.headcount} staff at ${business.address}${business.neighbourhood ? ` (${business.neighbourhood})` : ""}.${business.notes ? ` Notes: ${business.notes}` : ""}</BUSINESS>`
     : "";
@@ -33,14 +34,22 @@ function systemPrompt(ctx: LocationContext, business?: BusinessProfile): string 
   const patternBlock = historicalPatternBlock(patterns);
 
   return [
-    "You are a local-intelligence assistant for a Toronto small-business owner.",
-    "Answer ONLY from the Toronto data provided below. Be concrete and practical:",
-    "tie observations to business impact (foot traffic, deliveries, staffing, safety, opportunities).",
-    "When HISTORICAL_PATTERNS are provided, cite them explicitly: 'Based on N similar past moments...'",
+    "You are a custom local-intelligence agent for a Toronto small-business owner.",
+    "You have access to THREE layers of intelligence:",
+    "  1. LIVE Toronto civic data (weather, transit, events, construction) around their location",
+    "  2. HISTORICAL city signal patterns — similar moments from the past 90 days",
+    "  3. THE OWNER'S OWN business data — their actual revenue, customer counts, and staff schedule",
+    "Answer ONLY from the data provided. Be concrete and actionable:",
+    "  - Tie city signals to business impact (foot traffic, deliveries, staffing, revenue opportunities)",
+    "  - When HISTORICAL_PATTERNS are present, cite: 'Based on N similar past moments...'",
+    "  - When BUSINESS_HISTORY is present, compare upcoming schedule against forecast demand.",
+    "    Explicitly flag under-staffing: 'Your forecast shows SURGE demand Friday 6–9pm but you have X staff scheduled.'",
+    "    Explicitly flag over-staffing: 'Tuesday afternoon is historically slow — you may be over-scheduled.'",
+    "  - When the owner asks about revenue or customers, use their actual numbers, not generic estimates.",
     "If data is marked [demo], note it may be placeholder. Cite distances when relevant.",
-    "Keep answers tight and actionable.",
     "",
     profileBlock,
+    bizHistoryBlock,
     `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
     "",
     patternBlock,
@@ -61,8 +70,14 @@ export async function askForBusiness(
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
   const ctx = await buildContext(scopeFromBusiness(business, radiusM));
+
+  // Pull business's own history + upcoming schedule for the agent
+  const summary   = businessHistory.summary(businessId);
+  const upcoming  = businessSchedule.upcoming(businessId, 7);
+  const histBlock = businessHistoryBlock(businessId, business.businessType, summary, upcoming);
+
   const result = await chat([
-    { role: "system", content: systemPrompt(ctx, business) },
+    { role: "system", content: systemPrompt(ctx, business, histBlock) },
     { role: "user", content: question },
   ]);
   return {

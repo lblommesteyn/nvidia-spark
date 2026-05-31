@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { businesses, snapshots, type BusinessInput } from "./db.ts";
+import { businesses, snapshots, businessHistory, businessSchedule, type BusinessInput } from "./db.ts";
 import { geocode } from "./geo.ts";
 import { CIVIC_SOURCES, getCivicSource, loadCivicSource } from "./sources/civic.ts";
 import { getAirQuality, getWeather } from "./sources/environment.ts";
@@ -276,6 +276,71 @@ app.post("/api/businesses", async (c) => {
 app.delete("/api/businesses/:id", (c) =>
   c.json({ deleted: businesses.remove(c.req.param("id")) }),
 );
+
+// ---- Generate synthetic business data on demand ----
+app.post("/api/businesses/:id/generate", async (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const days = Math.min(Number(c.req.query("days") ?? 90), 365);
+  // Dynamically import so the generator only loads when called.
+  const { generateBusinessData } = await import("./ai/bizdata.ts");
+  const { history, schedule } = generateBusinessData(b.id, b.businessType, b.headcount || 4, days);
+  businessHistory.upsertMany(history);
+  businessSchedule.upsertMany(schedule);
+  return c.json({ historyRows: history.length, scheduleRows: schedule.length });
+});
+
+// ---- Business history (revenue + customer counts) ----
+app.get("/api/businesses/:id/history", (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const days = Math.min(Number(c.req.query("days") ?? 90), 365);
+  const rows = businessHistory.forBusiness(b.id, days);
+  const summary = businessHistory.summary(b.id);
+  return c.json({ businessId: b.id, days, summary, rows });
+});
+
+app.post("/api/businesses/:id/history", async (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
+  const rows = (body.rows as Array<Record<string, unknown>>).map((r) => ({
+    business_id: b.id,
+    date: String(r.date ?? ""),
+    hour: Number(r.hour ?? 0),
+    revenue: r.revenue != null ? Number(r.revenue) : null,
+    customer_count: r.customer_count != null ? Number(r.customer_count) : null,
+    notes: r.notes ? String(r.notes) : null,
+  }));
+  businessHistory.upsertMany(rows);
+  return c.json({ inserted: rows.length });
+});
+
+// ---- Business schedule (staff hours) ----
+app.get("/api/businesses/:id/schedule", (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const upcoming = businessSchedule.upcoming(b.id, 7);
+  const recent   = businessSchedule.forBusiness(b.id, 14);
+  return c.json({ businessId: b.id, upcoming, recent });
+});
+
+app.post("/api/businesses/:id/schedule", async (c) => {
+  const b = businesses.get(c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
+  const rows = (body.rows as Array<Record<string, unknown>>).map((r) => ({
+    business_id: b.id,
+    date: String(r.date ?? ""),
+    hour: Number(r.hour ?? 0),
+    staff_count: Number(r.staff_count ?? 1),
+    role: r.role ? String(r.role) : null,
+  }));
+  businessSchedule.upsertMany(rows);
+  return c.json({ inserted: rows.length });
+});
 
 // ---- Agent ----
 app.post("/api/agent", async (c) => {

@@ -2842,3 +2842,272 @@ body.lp-visible #particle-canvas {
   display: flex;
   gap: 6px;
 }
+
+/* ---- BusinessHistory -------------------------------------------------------- */
+.business-history .bh-tabs { display: flex; gap: 4px; }
+.bh-tab {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.bh-tab:hover { background: var(--surface2); color: var(--text); }
+.bh-tab.is-active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
+
+.bh-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.bh-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.bh-stat {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 10px 16px;
+  min-width: 110px;
+}
+.bh-stat-value { font-size: 20px; font-weight: 700; color: var(--text); }
+.bh-stat-label { font-size: 11px; margin-top: 2px; }
+
+/* Heatmap */
+.bh-heatmap-section { display: flex; flex-direction: column; gap: 6px; }
+.bh-heatmap-controls { display: flex; align-items: center; justify-content: space-between; }
+.bh-toggle { display: flex; gap: 4px; }
+.heatmap { display: flex; flex-direction: column; gap: 1px; overflow-x: auto; }
+.heatmap-labels-dow {
+  display: grid;
+  grid-template-columns: 36px repeat(7, 1fr);
+  gap: 1px;
+  margin-left: 0;
+}
+.heatmap-dow {
+  font-size: 10px;
+  text-align: center;
+  color: var(--muted);
+  padding-left: 36px;
+}
+.heatmap-row {
+  display: grid;
+  grid-template-columns: 36px repeat(7, 1fr);
+  gap: 1px;
+}
+.heatmap-hour-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-align: right;
+  padding-right: 6px;
+  line-height: 14px;
+}
+.heatmap-cell {
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: opacity 0.1s;
+  cursor: default;
+}
+.heatmap-cell:hover { opacity: 1 !important; outline: 1px solid white; }
+
+/* Schedule strip */
+.bh-schedule-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bh-schedule-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  min-width: 64px;
+  gap: 2px;
+}
+.bh-schedule-dow { font-size: 12px; font-weight: 600; }
+.bh-schedule-date { font-size: 10px; }
+.bh-schedule-staff { font-size: 16px; font-weight: 700; color: var(--accent); }
+
+/* Upload tab */
+.bh-upload-section { display: flex; flex-direction: column; gap: 14px; }
+.bh-upload-card {
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.bh-upload-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.bh-upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.bh-upload-divider::before, .bh-upload-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.bh-upload-msg {
+  font-size: 12px;
+  color: #3fb950;
+  padding: 8px 12px;
+  background: rgba(63,185,80,0.08);
+  border-radius: 6px;
+}
+.bh-upload-msg.is-error { color: #f85149; background: rgba(248,81,73,0.08); }
+
+/* ---- Agent data context bar ------------------------------------------------ */
+.agent-data-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 0;
+  border-bottom: 1px solid var(--border);
+  min-height: 36px;
+}
+
+.agent-data-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 0;
+  text-align: left;
+}
+
+.agent-data-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.agent-data-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-data-value { font-size: 13px; font-weight: 600; color: var(--text); }
+.agent-data-chevron { font-size: 9px; margin-left: 4px; }
+
+.agent-data-manage {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.agent-data-manage:hover { background: var(--surface2); }
+
+.agent-data-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  flex: 1;
+}
+
+/* Expanded heatmap */
+.agent-data-expanded {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-data-expanded-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Mini heatmap (horizontal: days as columns, hours as rows) */
+.heatmap-mini {
+  display: flex;
+  gap: 4px;
+  position: relative;
+}
+.heatmap-mini-cols {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+.heatmap-mini-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+}
+.heatmap-mini-dow {
+  font-size: 9px;
+  text-align: center;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.heatmap-mini-cell {
+  height: 5px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.heatmap-mini-hours {
+  position: relative;
+  width: 28px;
+  flex-shrink: 0;
+}
+.heatmap-mini-hlabel {
+  position: absolute;
+  right: 0;
+  font-size: 8px;
+  color: var(--muted);
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* Schedule strip inside expanded heatmap */
+.agent-schedule-strip {
+  display: flex;
+  gap: 6px;
+}
+.agent-schedule-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface2);
+  border-radius: 5px;
+  padding: 4px 8px;
+  min-width: 44px;
+}
+.agent-schedule-dow { font-size: 10px; font-weight: 600; }
+.agent-schedule-hrs { font-size: 14px; font-weight: 700; color: var(--accent); }
+
+/* Manage drawer */
+.agent-manage-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.agent-manage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-manage-msg {
+  font-size: 11px;
+  color: #3fb950;
+  padding: 4px 8px;
+  background: rgba(63,185,80,0.08);
+  border-radius: 4px;
+}

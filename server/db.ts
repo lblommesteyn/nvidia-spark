@@ -125,6 +125,140 @@ export const businesses = {
   },
 };
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS business_history (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    date          TEXT NOT NULL,
+    hour          INTEGER NOT NULL CHECK(hour >= 0 AND hour <= 23),
+    revenue       REAL,
+    customer_count INTEGER,
+    notes         TEXT,
+    UNIQUE(business_id, date, hour)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bh_business ON business_history(business_id, date DESC);
+
+  CREATE TABLE IF NOT EXISTS business_schedule (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    date          TEXT NOT NULL,
+    hour          INTEGER NOT NULL CHECK(hour >= 0 AND hour <= 23),
+    staff_count   INTEGER NOT NULL DEFAULT 1,
+    role          TEXT,
+    UNIQUE(business_id, date, hour, role)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bs_business ON business_schedule(business_id, date DESC);
+`);
+
+export interface HistoryRow {
+  id: number;
+  business_id: string;
+  date: string;
+  hour: number;
+  revenue: number | null;
+  customer_count: number | null;
+  notes: string | null;
+}
+
+export interface ScheduleRow {
+  id: number;
+  business_id: string;
+  date: string;
+  hour: number;
+  staff_count: number;
+  role: string | null;
+}
+
+export type HistoryInsert = Omit<HistoryRow, "id">;
+export type ScheduleInsert = Omit<ScheduleRow, "id">;
+
+export const businessHistory = {
+  upsertMany(rows: HistoryInsert[]): void {
+    const stmt = db.prepare(`
+      INSERT INTO business_history (business_id, date, hour, revenue, customer_count, notes)
+      VALUES (@business_id, @date, @hour, @revenue, @customer_count, @notes)
+      ON CONFLICT(business_id, date, hour) DO UPDATE SET
+        revenue = excluded.revenue,
+        customer_count = excluded.customer_count,
+        notes = excluded.notes
+    `);
+    const run = db.transaction((rs: HistoryInsert[]) => rs.forEach((r) => stmt.run(r)));
+    run(rows);
+  },
+
+  forBusiness(businessId: string, daysBack = 90): HistoryRow[] {
+    const cutoff = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
+    return db.prepare(
+      "SELECT * FROM business_history WHERE business_id = ? AND date >= ? ORDER BY date DESC, hour ASC",
+    ).all(businessId, cutoff) as HistoryRow[];
+  },
+
+  summary(businessId: string): {
+    totalDays: number;
+    avgDailyRevenue: number | null;
+    avgDailyCustomers: number | null;
+    peakHour: number | null;
+    peakDow: number | null;
+  } {
+    const rows = businessHistory.forBusiness(businessId, 90);
+    if (!rows.length) return { totalDays: 0, avgDailyRevenue: null, avgDailyCustomers: null, peakHour: null, peakDow: null };
+
+    const byHour: Record<number, number[]> = {};
+    const byDow: Record<number, number[]> = {};
+    const byDate: Record<string, number> = {};
+    let totalRev = 0, totalCust = 0, revCount = 0, custCount = 0;
+
+    for (const r of rows) {
+      if (r.revenue != null) { totalRev += r.revenue; revCount++; byDate[r.date] = (byDate[r.date] ?? 0) + r.revenue; }
+      if (r.customer_count != null) { totalCust += r.customer_count; custCount++; }
+      byHour[r.hour] = [...(byHour[r.hour] ?? []), r.customer_count ?? r.revenue ?? 0];
+      const dow = new Date(r.date).getDay();
+      byDow[dow] = [...(byDow[dow] ?? []), r.customer_count ?? r.revenue ?? 0];
+    }
+
+    const avgByHour = Object.entries(byHour).map(([h, vs]) => [Number(h), vs.reduce((a, b) => a + b, 0) / vs.length] as [number, number]);
+    const avgByDow  = Object.entries(byDow).map(([d, vs])  => [Number(d), vs.reduce((a, b) => a + b, 0) / vs.length] as [number, number]);
+    const peakHour = avgByHour.sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const peakDow  = avgByDow.sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const dates = Object.keys(byDate);
+
+    return {
+      totalDays: dates.length,
+      avgDailyRevenue: revCount ? Math.round(totalRev / dates.length) : null,
+      avgDailyCustomers: custCount ? Math.round(totalCust / dates.length) : null,
+      peakHour,
+      peakDow,
+    };
+  },
+};
+
+export const businessSchedule = {
+  upsertMany(rows: ScheduleInsert[]): void {
+    const stmt = db.prepare(`
+      INSERT INTO business_schedule (business_id, date, hour, staff_count, role)
+      VALUES (@business_id, @date, @hour, @staff_count, @role)
+      ON CONFLICT(business_id, date, hour, role) DO UPDATE SET staff_count = excluded.staff_count
+    `);
+    const run = db.transaction((rs: ScheduleInsert[]) => rs.forEach((r) => stmt.run(r)));
+    run(rows);
+  },
+
+  forBusiness(businessId: string, daysBack = 14): ScheduleRow[] {
+    const cutoff = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
+    return db.prepare(
+      "SELECT * FROM business_schedule WHERE business_id = ? AND date >= ? ORDER BY date ASC, hour ASC",
+    ).all(businessId, cutoff) as ScheduleRow[];
+  },
+
+  upcoming(businessId: string, daysAhead = 7): ScheduleRow[] {
+    const today = new Date().toISOString().slice(0, 10);
+    const end   = new Date(Date.now() + daysAhead * 86_400_000).toISOString().slice(0, 10);
+    return db.prepare(
+      "SELECT * FROM business_schedule WHERE business_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, hour ASC",
+    ).all(businessId, today, end) as ScheduleRow[];
+  },
+};
+
 interface SnapshotRow {
   id: number;
   captured_at: string;

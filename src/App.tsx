@@ -151,7 +151,7 @@ export function App() {
       x: 0,
       y: 5,
       w: 12,
-      h: 5,
+      h: 8,
       content: selected ? (
         <AgentChat business={selected} />
       ) : (
@@ -171,7 +171,7 @@ export function App() {
     {
       id: "forecast",
       x: 0,
-      y: 15,
+      y: 18,
       w: 12,
       h: 6,
       content: (
@@ -281,7 +281,7 @@ export function App() {
     {
       id: "livetv",
       x: 0,
-      y: 11,
+      y: 13,
       w: 7,
       h: 6,
       content: (
@@ -297,7 +297,7 @@ export function App() {
     {
       id: "flow",
       x: 7,
-      y: 11,
+      y: 13,
       w: 5,
       h: 6,
       content: (
@@ -326,7 +326,7 @@ export function App() {
     {
       id: "events",
       x: 0,
-      y: 17,
+      y: 19,
       w: 6,
       h: 5,
       content: (
@@ -359,7 +359,7 @@ export function App() {
     {
       id: "sources",
       x: 6,
-      y: 17,
+      y: 19,
       w: 6,
       h: 5,
       content: (
@@ -388,7 +388,7 @@ export function App() {
     {
       id: "weather",
       x: 0,
-      y: 22,
+      y: 24,
       w: 3,
       h: 3,
       content: (
@@ -413,7 +413,7 @@ export function App() {
     {
       id: "airquality",
       x: 3,
-      y: 22,
+      y: 24,
       w: 3,
       h: 3,
       content: (
@@ -438,7 +438,7 @@ export function App() {
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
       x: (i % 3) * 4,
-      y: 25 + Math.floor(i / 3) * 4,
+      y: 27 + Math.floor(i / 3) * 4,
       w: 4,
       h: 4,
       content: (

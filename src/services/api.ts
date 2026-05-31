@@ -339,4 +339,39 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then(json<AgentAnswer>),
+
+  bizHistory: (businessId: string) =>
+    fetch(`/api/businesses/${businessId}/history`).then(json<{
+      summary: {
+        totalDays: number;
+        avgDailyRevenue: number | null;
+        avgDailyCustomers: number | null;
+        peakHour: number | null;
+        peakDow: number | null;
+      };
+      rows: Array<{ date: string; hour: number; revenue: number | null; customer_count: number | null; notes: string | null }>;
+    }>),
+
+  bizSchedule: (businessId: string) =>
+    fetch(`/api/businesses/${businessId}/schedule`).then(json<{
+      upcoming: Array<{ date: string; hour: number; staff_count: number; role: string | null }>;
+      recent:   Array<{ date: string; hour: number; staff_count: number; role: string | null }>;
+    }>),
+
+  bizGenerate: (businessId: string) =>
+    fetch(`/api/businesses/${businessId}/generate`, { method: "POST" }).then(json<{ historyRows: number; scheduleRows: number }>),
+
+  bizUploadHistory: (businessId: string, rows: object[]) =>
+    fetch(`/api/businesses/${businessId}/history`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rows }),
+    }).then(json<{ inserted: number }>),
+
+  bizUploadSchedule: (businessId: string, rows: object[]) =>
+    fetch(`/api/businesses/${businessId}/schedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rows }),
+    }).then(json<{ inserted: number }>),
 };
