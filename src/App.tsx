@@ -398,8 +398,8 @@ export function App() {
       id: "weather",
       x: 0,
       y: 24,
-      w: 4,
-      h: 4,
+      w: 3,
+      h: 3,
       content: (
         <Panel
           title="Weather"
@@ -422,10 +422,10 @@ export function App() {
     },
     {
       id: "airquality",
-      x: 4,
+      x: 3,
       y: 24,
-      w: 4,
-      h: 4,
+      w: 3,
+      h: 3,
       content: (
         <Panel
           title="Air Quality"
@@ -448,10 +448,10 @@ export function App() {
     },
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
-      x: ((i + 2) % 3) * 4,
-      y: 24 + Math.floor((i + 2) / 3) * 4,
-      w: 4,
-      h: 4,
+      x: ((i + 2) % 4) * 3,
+      y: 24 + Math.floor((i + 2) / 4) * 3,
+      w: 3,
+      h: 3,
       content: (
         <Panel
           title={`${CATEGORY_LABEL[g.category]} · ${g.label}`}

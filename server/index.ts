@@ -29,7 +29,7 @@ import {
   unregisterSseClient,
   sseClientCount,
 } from "./ai/alerts.ts";
-import { activeProvider, chatStream, describeProvider } from "./ai/provider.ts";
+import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
 
@@ -397,27 +397,57 @@ app.post("/api/agent/stream", async (c) => {
           /* client disconnected */
         }
       };
+
+      // Build the prompt/context once (may throw → report and close).
+      let req;
       try {
-        const { messages, opts, contextUsed } = await buildBusinessAgentRequest(
-          body.businessId,
-          body.question,
-          radiusM,
-        );
-        const { provider, model } = describeProvider();
-        send({ meta: true, provider, model, contextUsed });
-        for await (const delta of chatStream(messages, opts)) {
-          send({ delta });
-        }
-        send({ done: true });
+        req = await buildBusinessAgentRequest(body.businessId, body.question, radiusM);
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
+        try { controller.close(); } catch { /* already closed */ }
+        return;
+      }
+
+      const { provider, model } = describeProvider();
+      send({ meta: true, provider, model, contextUsed: req.contextUsed });
+
+      // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
+      // delta shape we don't recognise, or output that was entirely a stripped
+      // <think> trace) or throws mid-stream, fall back to a single non-streaming
+      // call so the answer ALWAYS comes through.
+      let emitted = 0;
+      try {
+        for await (const delta of chatStream(req.messages, req.opts)) {
+          if (delta) {
+            emitted += delta.length;
+            send({ delta });
+          }
+        }
+      } catch (err) {
+        if (emitted === 0) {
+          try {
+            const result = await chat(req.messages, req.opts);
+            if (result.text) send({ delta: result.text });
+            emitted += result.text.length;
+          } catch (err2) {
+            send({ error: err2 instanceof Error ? err2.message : "agent error" });
+            try { controller.close(); } catch { /* already closed */ }
+            return;
+          }
         }
       }
+
+      if (emitted === 0) {
+        try {
+          const result = await chat(req.messages, req.opts);
+          send({ delta: result.text || "(No response from the model.)" });
+        } catch (err) {
+          send({ error: err instanceof Error ? err.message : "agent error" });
+        }
+      }
+
+      send({ done: true });
+      try { controller.close(); } catch { /* already closed */ }
     },
   });
 
