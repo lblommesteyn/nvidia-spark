@@ -51,28 +51,33 @@ def _ensure_model():
 
 
 def _extract_text(item) -> str:
-    """NeMo transcribe() may return str, Hypothesis, or objects with .text."""
+    """Pull the transcript string out of whatever NeMo's transcribe() returns.
+
+    Newer NeMo returns Hypothesis objects (which have a `.text`, possibly empty
+    when no speech was detected). We must NEVER fall back to str(item) for those
+    — their repr is `Hypothesis(score=0.0, y_sequence=tensor([...]), text='', …)`
+    which would otherwise leak into the chat as the "transcript".
+    """
     if item is None:
         return ""
     if isinstance(item, str):
         return item.strip()
-    text = getattr(item, "text", None)
-    if text:
-        return str(text).strip()
+    # Hypothesis (or any object exposing .text) — trust .text even if empty.
+    if hasattr(item, "text"):
+        return str(getattr(item, "text") or "").strip()
+    # Container of hypotheses (e.g. NBestHypotheses)
     hyps = getattr(item, "hypotheses", None)
     if hyps:
-        h0 = hyps[0]
-        t = getattr(h0, "text", None) or (h0 if isinstance(h0, str) else None)
-        if t:
-            return str(t).strip()
-    # Some versions return a list/tuple of token strings
-    if isinstance(item, (list, tuple)) and item and isinstance(item[0], str):
-        return " ".join(item).strip()
-    raw = str(item).strip()
-    # Avoid returning useless object reprs
-    if raw.startswith("<") and "object at" in raw:
-        return ""
-    return raw
+        return _extract_text(hyps[0])
+    # List/tuple: either [Hypothesis, …] or a list of token strings
+    if isinstance(item, (list, tuple)):
+        if not item:
+            return ""
+        if all(isinstance(x, str) for x in item):
+            return " ".join(item).strip()
+        return _extract_text(item[0])
+    # Unknown object — do NOT leak its repr into the UI.
+    return ""
 
 
 def _to_wav16k(src: Path, dst: Path) -> None:

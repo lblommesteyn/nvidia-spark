@@ -68,7 +68,9 @@ export async function parakeetTranscribe(
       throw new Error(err || `ASR HTTP ${res.status}`);
     }
     const d = (await res.json()) as { text?: string };
-    return (d.text ?? "").trim() || null;
+    // Preserve the empty string for "no speech detected" — only a thrown error
+    // / null means the service itself was unreachable.
+    return (d.text ?? "").trim();
   } catch (err) {
     if (err instanceof Error) throw err;
     throw new Error("ASR service unavailable");
