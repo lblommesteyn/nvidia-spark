@@ -170,7 +170,7 @@ export function App() {
   const tiles: GridTile[] = [
     {
       id: "agent",
-      x: 0,
+      x: 4,
       y: 0,
       w: 8,
       h: 8,
@@ -192,7 +192,7 @@ export function App() {
     },
     {
       id: "alerts",
-      x: 8,
+      x: 0,
       y: 0,
       w: 4,
       h: 8,
@@ -546,11 +546,7 @@ export function App() {
       </header>
 
       <div class="main-content">
-        {/* Slim helper bar above the map so it stays clear of the tiles that
-            scroll up over the map. */}
-        <div class="grid-hint">Drag tiles by their header · resize from the edges · <button class="linklike" onClick={() => resetDashboardLayout()}>reset layout</button></div>
-
-        {/* ---- Map (tall, sticky hero — tiles scroll up over it) ---- */}
+        {/* ---- Map ---- */}
         <div class="map-section">
           <TorontoMap
             home={selected ? { lon: selected.lon, lat: selected.lat, label: selected.name } : null}
@@ -567,6 +563,7 @@ export function App() {
         </div>
 
         {/* ---- Panels (drag to reorder, resize from edges) ---- */}
+        <div class="grid-hint">Drag tiles by their header · resize from the edges · <button class="linklike" onClick={() => resetDashboardLayout()}>reset</button></div>
         <DashboardGrid tiles={tiles} />
       </div>
 

@@ -18,6 +18,8 @@ import type { ComponentChildren, VNode } from "preact";
  *   - italic          *x*    _x_
  *   - inline code     `x`
  *   - links           [text](http(s)://…)  (other schemes rendered as text)
+ *   - tables          | a | b |  /  |---|---|  (GFM pipe tables)
+ *   - horizontal rule --- *** ___ (3+)
  *   - paragraphs / line breaks
  */
 
@@ -63,7 +65,40 @@ function parseInline(text: string): ComponentChildren[] {
   return out;
 }
 
-/** Block parsing: group lines into paragraphs, lists, headings, quotes. */
+/** A line is a horizontal rule if it's only 3+ of - * _ (allowing spaces). */
+function isHr(line: string): boolean {
+  const t = line.trim();
+  return /^([-*_])(\s*\1){2,}$/.test(t);
+}
+
+/** A line is a GFM table delimiter row, e.g. | --- | :--: | ---: | */
+function isTableDelimiter(line: string): boolean {
+  const t = line.trim();
+  if (!t.includes("|") && !/^-/.test(t)) return false;
+  return /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?$/.test(t);
+}
+
+/** Split a pipe-table row into trimmed cell strings (strips outer pipes). */
+function splitRow(line: string): string[] {
+  let t = line.trim();
+  if (t.startsWith("|")) t = t.slice(1);
+  if (t.endsWith("|")) t = t.slice(0, -1);
+  return t.split("|").map((c) => c.trim());
+}
+
+/** Alignment per column, parsed from the delimiter row. */
+function parseAligns(delim: string): (string | undefined)[] {
+  return splitRow(delim).map((c) => {
+    const left = c.startsWith(":");
+    const right = c.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return undefined;
+  });
+}
+
+/** Block parsing: group lines into paragraphs, lists, headings, quotes, tables. */
 function parseBlocks(src: string): VNode[] {
   const lines = src.replace(/\r\n/g, "\n").split("\n");
   const blocks: VNode[] = [];
@@ -86,11 +121,67 @@ function parseBlocks(src: string): VNode[] {
     list = null;
   };
 
-  for (const raw of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
     const line = raw.trimEnd();
     if (line.trim() === "") {
       flushPara();
       flushList();
+      continue;
+    }
+
+    // GFM pipe table: a header row with a pipe, immediately followed by a
+    // delimiter row (| --- | --- |). Render as a real <table>.
+    if (
+      line.includes("|") &&
+      i + 1 < lines.length &&
+      isTableDelimiter(lines[i + 1]) &&
+      !isHr(line)
+    ) {
+      flushPara();
+      flushList();
+      const headers = splitRow(line);
+      const aligns = parseAligns(lines[i + 1]);
+      const rows: string[][] = [];
+      let j = i + 2;
+      for (; j < lines.length; j++) {
+        const r = lines[j].trim();
+        if (r === "" || !r.includes("|")) break;
+        rows.push(splitRow(lines[j]));
+      }
+      blocks.push(
+        <table key={k()} class="md-table">
+          <thead>
+            <tr>
+              {headers.map((h, c) => (
+                <th key={k()} style={aligns[c] ? `text-align:${aligns[c]}` : undefined}>
+                  {parseInline(h)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((cells) => (
+              <tr key={k()}>
+                {headers.map((_, c) => (
+                  <td key={k()} style={aligns[c] ? `text-align:${aligns[c]}` : undefined}>
+                    {parseInline(cells[c] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
+      );
+      i = j - 1;
+      continue;
+    }
+
+    // Horizontal rule: --- *** ___
+    if (isHr(line)) {
+      flushPara();
+      flushList();
+      blocks.push(<hr key={k()} class="md-hr" />);
       continue;
     }
 
