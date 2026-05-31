@@ -255,7 +255,7 @@ export function AgentChat({ business }: { business: Business }) {
           <div class="agent-data-empty">
             <span class="muted" style={{ fontSize: "12px" }}>No business data yet — agent is using city signals only.</span>
             <button class="btn-ghost" style={{ fontSize: "11px", padding: "3px 10px" }} onClick={generate} disabled={genBusy}>
-              {genBusy ? "Generating…" : "Generate sample data"}
+              {genBusy ? "Loading…" : "Load baseline data"}
             </button>
           </div>
         )}
@@ -285,9 +285,9 @@ export function AgentChat({ business }: { business: Business }) {
       {manageOpen && (
         <div class="agent-manage-drawer">
           <div class="agent-manage-row">
-            <span class="muted" style={{ fontSize: "12px" }}>Regenerate 90-day sample ({business.businessType})</span>
+            <span class="muted" style={{ fontSize: "12px" }}>Reload 90-day demand baseline ({business.businessType})</span>
             <button class="btn-ghost" style={{ fontSize: "11px" }} onClick={generate} disabled={genBusy}>
-              {genBusy ? "…" : "Regenerate"}
+              {genBusy ? "…" : "Reload"}
             </button>
           </div>
           <div class="agent-manage-row">

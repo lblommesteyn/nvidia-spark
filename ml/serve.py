@@ -230,10 +230,10 @@ def train_model():
     days = int(body.get("days", 730))
 
     csv_candidates = [
-        MODEL_DIR / f"synthetic_demand_{archetype}_{days}d.csv",
-        MODEL_DIR / f"synthetic_demand_{archetype}_730d.csv",
-        MODEL_DIR / f"synthetic_demand_{archetype}_365d.csv",
-        MODEL_DIR / f"synthetic_demand_{archetype}.csv",
+        MODEL_DIR / f"cityflow_demand_{archetype}_{days}d.csv",
+        MODEL_DIR / f"cityflow_demand_{archetype}_730d.csv",
+        MODEL_DIR / f"cityflow_demand_{archetype}_365d.csv",
+        MODEL_DIR / f"cityflow_demand_{archetype}.csv",
     ]
     csv_path = next((p for p in csv_candidates if p.exists()), None)
     if csv_path is None:

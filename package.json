@@ -16,6 +16,7 @@
     "backfill": "tsx scripts/backfill_snapshots.ts",
     "gen:bizdata": "tsx scripts/gen_business_data.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "setup:gpu": "bash scripts/setup-gpu.sh",
     "gx10:nemotron": "bash scripts/gx10-nemotron.sh",
     "agent:nemotron": "bash scripts/run-nemotron-agent.sh"
   },

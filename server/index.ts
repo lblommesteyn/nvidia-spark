@@ -301,7 +301,7 @@ app.delete("/api/businesses/:id", (c) =>
   c.json({ deleted: businesses.remove(c.req.param("id")) }),
 );
 
-// ---- Generate synthetic business data on demand ----
+// ---- Generate business demand baseline on demand ----
 app.post("/api/businesses/:id/generate", async (c) => {
   const b = businesses.get(c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
