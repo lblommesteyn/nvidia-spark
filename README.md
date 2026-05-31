@@ -43,37 +43,42 @@ bash scripts/tunnel.sh   # publish :3100 to the public ngrok URL (run on the GPU
 
 ## 2. Tech stack & architecture
 
-**Stack:** Vite 6 + Preact 10 (TypeScript, strict) · MapLibre GL · Hono (Node) ·
-SQLite (better-sqlite3) · Python/Flask ML + ASR microservices · provider-agnostic
-LLM layer (NVIDIA Nemotron / OpenAI / Anthropic / Ollama / built-in mock).
+### Tech stack
 
-```
-                         Browser  (Preact + MapLibre)
-                                │   http://localhost:3100
-                                │   relative /api calls
-                                ▼
-              ┌─────────────────────────────────────────┐
-              │   Hono API  (Node, :8787)                │
-              │   cache + TTL + single-flight            │
-              └───┬───────────────┬───────────────┬──────┘
-                  │               │               │
-        ┌─────────▼──────┐  ┌─────▼───────┐  ┌────▼─────────────┐
-        │ SQLite          │  │ LLM layer   │  │ Live civic feeds │
-        │ business store  │  │ provider-   │  │ Toronto Open Data│
-        └─────────────────┘  │ agnostic    │  │ Open-Meteo, GBFS │
-                             └─────┬───────┘  │ TTC, ESPN, OpenSky│
-                                   │          └──────────────────┘
-                     ┌─────────────▼───────────────┐
-                     │  NVIDIA Nemotron NIM         │
-                     │  on DGX / GX10 GPU (on-device)│
-                     └──────────────────────────────┘
+| Layer | Tech |
+|---|---|
+| **Frontend** | Vite 6 · Preact 10 (TypeScript, strict) · MapLibre GL |
+| **Backend** | Hono on Node · TTL cache + single-flight |
+| **Database** | SQLite (better-sqlite3) — business profiles |
+| **AI / LLM** | Provider-agnostic layer → **NVIDIA Nemotron** (on-device, DGX/GX10) · OpenAI · Anthropic · Ollama · built-in mock |
+| **ML** | CityFlow gradient demand model (Python · scikit-learn · Flask) |
+| **Voice** | NVIDIA Parakeet ASR (Flask, GPU) |
+| **Geocoding** | OpenStreetMap Nominatim (Toronto-bounded) |
+| **Data** | City of Toronto Open Data (CKAN) · Open-Meteo · GBFS · TTC · ESPN · OpenSky |
+| **Publish** | ngrok tunnel → `:3100` |
 
-        ┌──────────────────────────┐     ┌──────────────────────────┐
-        │ CityFlow ML (Flask :8788)│     │ Parakeet ASR (Flask :8789)│
-        │ gradient demand model    │     │ voice → text (GPU)        │
-        └──────────────────────────┘     └──────────────────────────┘
+### Architecture
 
-   Public URL:  ngrok tunnel  ──►  :3100   (scripts/tunnel.sh)
+```mermaid
+flowchart TD
+    B["Browser<br/>Preact + MapLibre · :3100"]
+    API["Hono API · Node · :8787<br/>cache + TTL + single-flight"]
+    DB[("SQLite<br/>business profiles")]
+    LLM["LLM layer<br/>provider-agnostic"]
+    NEM["NVIDIA Nemotron<br/>on-device · DGX/GX10 GPU"]
+    ML["CityFlow ML · Flask · :8788<br/>gradient demand model"]
+    ASR["Parakeet ASR · Flask · :8789<br/>voice → text · GPU"]
+    FEEDS["Live civic feeds<br/>Toronto Open Data · Open-Meteo<br/>GBFS · TTC · ESPN · OpenSky"]
+
+    B -- "/api (proxied)" --> API
+    B -. "voice" .-> ASR
+    API --> DB
+    API --> LLM
+    API --> FEEDS
+    API --> ML
+    LLM --> NEM
+
+    NGROK["Public URL · ngrok tunnel"] --> B
 ```
 
 **How per-business tailoring works:**
