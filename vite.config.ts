@@ -10,7 +10,17 @@ export default defineConfig({
     // Vite proxies to the local backend below, so only this server needs to be
     // exposed — the API can stay bound to localhost.
     host: true,
-    allowedHosts: ["armband-ravioli-crayfish.ngrok-free.dev"],
+    // Public demo URL is served through an ngrok tunnel (see scripts/tunnel.sh).
+    // The leading-dot entries whitelist ANY ngrok subdomain so the demo keeps
+    // working even if the reserved domain changes; the explicit one is our
+    // current reserved static domain.
+    allowedHosts: [
+      "armband-ravioli-crayfish.ngrok-free.dev",
+      ".ngrok-free.dev",
+      ".ngrok-free.app",
+      ".ngrok.app",
+      ".ngrok.io",
+    ],
     proxy: {
       // Forward API calls to the in-repo Node backend during development.
       // SSE endpoints (/api/agent/stream, /api/alerts/stream) need buffering
