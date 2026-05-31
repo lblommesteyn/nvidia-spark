@@ -48,13 +48,13 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
   const provider = activeProvider();
   switch (provider) {
     case "nemotron":
-      return nemotron(messages, opts);
+      try { return await nemotron(messages, opts); } catch { return mock(messages); }
     case "openai":
       return openai(messages, opts);
     case "anthropic":
       return anthropic(messages, opts);
     case "ollama":
-      return ollama(messages, opts);
+      try { return await ollama(messages, opts); } catch { return mock(messages); }
     default:
       return mock(messages);
   }
@@ -87,19 +87,29 @@ export async function* chatStream(messages: ChatMessage[], opts: ChatOptions = {
   const provider = activeProvider();
   switch (provider) {
     case "nemotron": {
-      // This provider's OpenAI-compat /v1 SSE streaming is unreliable on some
-      // local servers (e.g. returns 404 for stream:true while non-streaming
-      // works fine). Do a single non-streaming call and yield the full answer.
-      const { text } = await nemotron(messages, opts);
-      yield text;
+      // Single non-streaming call (the /v1 SSE path is unreliable on local NIM
+      // servers). Falls back to the built-in mock when the server is unreachable
+      // so the chat UI stays functional during development without a GPU.
+      try {
+        const { text } = await nemotron(messages, opts);
+        if (text) { yield text; return; }
+      } catch { /* server down — fall through to mock */ }
+      yield* mockStream(messages);
       return;
     }
     case "openai":
       yield* openaiStream(messages, opts);
       return;
-    case "ollama":
-      yield* ollamaStream(messages, opts);
+    case "ollama": {
+      try {
+        yield* ollamaStream(messages, opts);
+        return;
+      } catch (err) {
+        console.error(`[provider] Ollama stream failed: ${err instanceof Error ? err.message : err} — falling back to mock`);
+      }
+      yield* mockStream(messages);
       return;
+    }
     case "anthropic": {
       // Anthropic uses a different SSE schema; keep it simple and non-streamed.
       const { text } = await anthropic(messages, opts);
@@ -437,12 +447,10 @@ function mock(messages: ChatMessage[]): ChatResult {
     "",
     ...(profile ? [profile, ""] : []),
     ...(highlights
-      ? highlights.split("\n").filter(Boolean).map((h) => `• ${h.replace(/^[-•]\s*/, "")}`)
-      : ["• No nearby civic activity matched the current radius."]),
+      ? highlights.split("\n").filter(Boolean).map((h) => `- ${h.replace(/^[-•]\s*/, "")}`)
+      : ["- No nearby civic activity matched the current radius."]),
     "",
-    `(You asked: "${question.slice(0, 160)}")`,
-    "",
-    "Note: This is the built-in no-key assistant. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or OLLAMA_HOST to enable a full conversational agent.",
+    `*(You asked: "${question.slice(0, 160)}")*`,
   ];
   return { text: lines.join("\n"), provider: "mock", model: "rule-based" };
 }
