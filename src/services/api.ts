@@ -109,6 +109,7 @@ export interface DemandForecast {
   provider: string;
   model: string;
   method: "heuristic" | "llm";
+  mlPowered?: boolean;
   horizonHours: number;
   level: DemandLevel;
   score: number;

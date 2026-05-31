@@ -4,6 +4,7 @@ import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businessHistoryBlock } from "./bizdata.ts";
 import { weekForecastForBusiness } from "./forecast.ts";
 import { getResearchBlock } from "./web-agent.ts";
+import { mlWeeklyProfile } from "./mlforecast.ts";
 import { businesses, businessHistory, businessSchedule } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
@@ -39,7 +40,7 @@ function systemPrompt(
   ctx: LocationContext,
   business?: BusinessProfile,
   bizHistoryBlock = "",
-  extras: { researchBlock?: string; weekBlock?: string } = {},
+  extras: { researchBlock?: string; weekBlock?: string; mlBlock?: string } = {},
 ): string {
   const profileBlock = business
     ? `<BUSINESS>${business.name} — a ${business.businessType} with ${business.headcount} staff at ${business.address}${business.neighbourhood ? ` (${business.neighbourhood})` : ""}.${business.notes ? ` Notes: ${business.notes}` : ""}</BUSINESS>`
@@ -71,6 +72,7 @@ function systemPrompt(
     "  2. LIVE Toronto civic data (weather, transit, events, construction) around their location",
     "  3. HISTORICAL city signal patterns — similar moments from the past 90 days",
     "  4. THE OWNER'S OWN business data — revenue, customers, staff schedule, and WEEK_FORECAST",
+    "  5. ML DEMAND MODEL — CityFlow gradient-boosting model trained on Toronto demand simulation",
     "Answer ONLY from the data provided. Be concrete and actionable:",
     "  - Always ground timing in <NOW>: say WHEN to act (e.g. 'before the 17:00 dinner window'), not just what.",
     "  - Tie city signals to business impact (foot traffic, deliveries, staffing, revenue opportunities)",
@@ -87,6 +89,7 @@ function systemPrompt(
     profileBlock,
     extras.researchBlock ?? "",
     extras.weekBlock ?? "",
+    extras.mlBlock ?? "",
     bizHistoryBlock,
     `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
     "",
@@ -100,6 +103,34 @@ function systemPrompt(
   ].filter(Boolean).join("\n");
 }
 
+const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function buildMlBlock(
+  businessType: string,
+  grid: number[][],
+  model: string,
+  archetype: string,
+): string {
+  const DOW = DOW_LABELS;
+  const flat = grid.flat();
+  const max = Math.max(...flat, 1);
+  // Show peak hour per day
+  const dayLines = grid.map((row, d) => {
+    const peakH = row.indexOf(Math.max(...row));
+    const peakV = Math.round(row[peakH]);
+    const avgV  = Math.round(row.reduce((a, b) => a + b, 0) / 24);
+    return `  ${DOW[d]}: peak ${String(peakH).padStart(2, "0")}:00 (~${peakV} customers), avg ~${avgV}/hr`;
+  });
+  return [
+    `<ML_DEMAND_MODEL model="${model}" archetype="${archetype}" business_type="${businessType}">`,
+    "Predicted customer counts from CityFlow gradient-boosting model (trained on Toronto demand simulation).",
+    "Use this to anchor staffing and timing recommendations to data-driven peaks, not just intuition.",
+    ...dayLines,
+    `Peak fraction of max: this hour vs ${Math.round(max)} peak customers.`,
+    "</ML_DEMAND_MODEL>",
+  ].join("\n");
+}
+
 export async function buildBusinessAgentRequest(
   businessId: string,
   question: string,
@@ -108,9 +139,10 @@ export async function buildBusinessAgentRequest(
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
   const scope = scopeFromBusiness(business, radiusM);
-  const [ctx, week] = await Promise.all([
+  const [ctx, week, mlProfile] = await Promise.all([
     buildContext(scope),
     weekForecastForBusiness(businessId, radiusM),
+    mlWeeklyProfile(business.businessType).catch(() => null),
   ]);
 
   // Pull business's own history + upcoming schedule for the agent
@@ -119,10 +151,13 @@ export async function buildBusinessAgentRequest(
   const histBlock = businessHistoryBlock(businessId, business.businessType, summary, upcoming);
   const researchBlock = getResearchBlock(businessId);
   const weekBlock = weekForecastBlock(businessId, week);
+  const mlBlock = mlProfile
+    ? buildMlBlock(business.businessType, mlProfile.grid, mlProfile.model, mlProfile.archetype)
+    : "";
 
   return {
     messages: [
-      { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock }) },
+      { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock, mlBlock }) },
       { role: "user", content: question },
     ],
     opts: { reasoning: false, maxTokens: 1536 },

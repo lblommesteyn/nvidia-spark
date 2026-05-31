@@ -14,4 +14,7 @@ venv/
 **/__pycache__/
 *.pyc
 *.pyo
+cityflow_ML_model/cafe_model.joblib
+cityflow_ML_model/restaurant_model.joblib
+cityflow_ML_model/synthetic_demand_*.csv
 out/
