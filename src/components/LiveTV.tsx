@@ -6,7 +6,7 @@ import { api, type LiveChannelSummary, type LiveResolution } from "../services/a
  * resolved YouTube live stream (CP24, CityNews, Global, CBC). The live video id
  * is resolved server-side and rotates, so we re-fetch on channel change.
  */
-export function LiveTV() {
+export function LiveTV({ onStatus }: { onStatus?: (s: "live" | "demo" | "loading") => void }) {
   const [channels, setChannels] = useState<LiveChannelSummary[]>([]);
   const [activeId, setActiveId] = useState<string>("cbcnews");
   const [stream, setStream] = useState<LiveResolution | null>(null);
@@ -22,10 +22,19 @@ export function LiveTV() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    onStatus?.("loading");
     setStream(null);
     api.liveChannel(activeId)
-      .then((r) => { if (!cancelled) setStream(r); })
-      .catch(() => { if (!cancelled) setStream(null); })
+      .then((r) => {
+        if (cancelled) return;
+        setStream(r);
+        onStatus?.(r?.embedUrl ? "live" : "demo");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setStream(null);
+        onStatus?.("demo");
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [activeId]);

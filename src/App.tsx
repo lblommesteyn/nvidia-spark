@@ -66,6 +66,7 @@ export function App() {
   const [flow, setFlow] = useState<FlowCollection | null>(null);
   const [provider, setProvider] = useState<string>("…");
   const [showSetup, setShowSetup] = useState(false);
+  const [liveTvStatus, setLiveTvStatus] = useState<"live" | "demo" | "loading">("loading");
 
   const selected = businesses.find((b) => b.id === selectedId) ?? null;
 
@@ -87,9 +88,10 @@ export function App() {
 
   useEffect(() => {
     if (selectedId) localStorage.setItem(LS_KEY, selectedId);
-    setContext(null);
-    setForecast(null);
-    setWeek(null);
+    // Note: we intentionally do NOT clear context/forecast/week here. Clearing
+    // them unmounts the tiles' content, which makes GridStack reflow and the
+    // whole dashboard "jump" on every business switch. Instead we keep the
+    // last-good data on screen and swap it in place once the new fetch resolves.
     api
       .context(selectedId ? { businessId: selectedId } : { radius: 1000 })
       .then(setContext)
@@ -181,7 +183,7 @@ export function App() {
       content: (
         <Panel
           title="Demand Forecast"
-          status={forecast ? "live" : "loading"}
+          status={forecast ? (forecast.method === "llm" ? "live" : "demo") : "loading"}
           description="Next ~12h demand outlook plus a 7-day structural projection (forecasted weather, Ontario calendar/holidays, scheduled events, persistent transit/construction). Runs on the active model — point NEMOTRON_BASE_URL at a Nemotron NIM (GX10) for on-device reasoning."
           updatedAt={forecast?.generatedAt}
           dataHref={`/api/forecast?${ctxQuery}`}
@@ -295,11 +297,11 @@ export function App() {
       content: (
         <Panel
           title="Live Toronto TV"
-          status="live"
+          status={liveTvStatus}
           description="Live news streams — CP24, CityNews, Global & CBC — resolved in real time."
           dataHref="/api/livetv"
         >
-          <LiveTV />
+          <LiveTV onStatus={setLiveTvStatus} />
         </Panel>
       ),
     },

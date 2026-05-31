@@ -2,8 +2,10 @@ import { distanceM } from "../geo.ts";
 import {
   CIVIC_SOURCES,
   loadCivicSource,
+  type CivicSourceDef,
 } from "../sources/civic.ts";
-import { getAirQuality, getWeather } from "../sources/environment.ts";
+import { getAirQuality, getWeather, type AirQualityNow, type WeatherNow } from "../sources/environment.ts";
+import { nowIso } from "../cache.ts";
 import type {
   BusinessProfile,
   CivicRecord,
@@ -115,15 +117,71 @@ export function temporalContext(at: Date = new Date()): TemporalContext {
 }
 
 /**
+ * Per-source soft deadline (ms). Each source already degrades to demo data on
+ * *error*, but a hung upstream can still leave a request waiting on that
+ * source's own (longer) network timeout. This bounds cold-load: if any one
+ * source hasn't settled within the deadline, we resolve a degraded fallback so
+ * the dashboard renders fast and that tile fills in on the next poll.
+ */
+const SOURCE_DEADLINE_MS = 3500;
+
+function withDeadline<T>(p: Promise<T>, ms: number, fallback: () => T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const done = (v: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => done(fallback()), ms);
+    p.then(done, () => done(fallback()));
+  });
+}
+
+function weatherFallback(): SourceResult<WeatherNow> {
+  return {
+    source: "weather",
+    status: "demo",
+    fetchedAt: nowIso(),
+    note: "source slow — showing placeholder; refreshes shortly",
+    data: { temperatureC: -3, feelsLikeC: -9, windKph: 22, humidity: 71, description: "Light snow", isDay: true },
+  };
+}
+
+function airQualityFallback(): SourceResult<AirQualityNow> {
+  return {
+    source: "airquality",
+    status: "demo",
+    fetchedAt: nowIso(),
+    note: "source slow — showing placeholder; refreshes shortly",
+    data: { usAqi: 34, pm25: 8, pm10: 14, category: "Good" },
+  };
+}
+
+function civicFallback(def: CivicSourceDef): SourceResult<CivicRecord[]> {
+  return {
+    source: def.key,
+    status: "demo",
+    fetchedAt: nowIso(),
+    note: "source slow — showing demo data; refreshes shortly",
+    data: def.demo ?? [],
+    attribution: def.attribution,
+  };
+}
+
+/**
  * Build a location-scoped, machine-readable context bundle: weather, air quality,
  * and all civic data sources filtered to records near the point. This is the
  * core "AI-friendly" artifact the agent (and external agents) consume.
  */
 export async function buildContext(scope: ContextScope): Promise<LocationContext> {
   const [weather, airQuality, ...civicResults] = await Promise.all([
-    getWeather(scope.point),
-    getAirQuality(scope.point),
-    ...CIVIC_SOURCES.map((def) => loadCivicSource(def)),
+    withDeadline(getWeather(scope.point), SOURCE_DEADLINE_MS, weatherFallback),
+    withDeadline(getAirQuality(scope.point), SOURCE_DEADLINE_MS, airQualityFallback),
+    ...CIVIC_SOURCES.map((def) =>
+      withDeadline(loadCivicSource(def), SOURCE_DEADLINE_MS, () => civicFallback(def)),
+    ),
   ]);
 
   const civic: CivicGroup[] = civicResults.map((result, idx) => {
