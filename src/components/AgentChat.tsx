@@ -326,10 +326,17 @@ export function AgentChat({ business }: { business: Business }) {
               <div class="bubble-text">{m.text}</div>
             ) : m.streaming && !m.text ? (
               <div class="bubble-text muted">Thinking<span class="stream-dots" /></div>
+            ) : m.streaming ? (
+              // While streaming, show raw tokens as plain text (preserve newlines)
+              // so partial/malformed markdown can never blank the bubble. We
+              // upgrade to formatted markdown once the response completes.
+              <div class="bubble-text" style="white-space:pre-wrap">
+                {m.text}
+                <span class="stream-caret" />
+              </div>
             ) : (
               <div class="bubble-text">
                 <Markdown text={m.text} />
-                {m.streaming && <span class="stream-caret" />}
               </div>
             )}
           </div>

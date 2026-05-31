@@ -146,5 +146,12 @@ export function Markdown({ text, class: cls }: { text: string; class?: string })
   // streaming, where this component re-renders on every token and we want the
   // existing DOM nodes to be reused (stable keys) rather than remounted.
   keySeq = 0;
-  return <div class={cls ? `md ${cls}` : "md"}>{parseBlocks(text ?? "")}</div>;
+  const wrap = cls ? `md ${cls}` : "md";
+  try {
+    return <div class={wrap}>{parseBlocks(text ?? "")}</div>;
+  } catch {
+    // Never let malformed/partial model output blank the bubble — fall back to
+    // plain text with preserved whitespace.
+    return <div class={wrap} style="white-space:pre-wrap">{text ?? ""}</div>;
+  }
 }
