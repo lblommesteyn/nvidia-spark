@@ -2126,6 +2126,83 @@ body.lp-visible #particle-canvas {
   font-size: 9px;
 }
 
+/* Nearest traffic camera (top-right control, mirrors the layer box style).
+   Sits below the 2D/3D view toggle (top:78px) and zoom control to avoid overlap. */
+.map-camera {
+  position: absolute;
+  top: 120px;
+  right: 8px;
+  z-index: 6;
+  width: 232px;
+  background: rgba(10, 10, 10, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  backdrop-filter: blur(2px);
+}
+.map-camera.is-collapsed {
+  width: auto;
+}
+.map-camera-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.map-camera-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse-rec 1.8s ease-in-out infinite;
+  flex: none;
+}
+.map-camera-title { flex: 1; text-align: left; }
+.map-camera-chevron { color: var(--text-faint); }
+.map-camera-body {
+  border-top: 1px solid var(--border-light);
+}
+.map-camera-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #000;
+}
+.map-camera-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.map-camera-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+}
+.map-camera-name {
+  font-size: 10px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-camera-meta { font-size: 9px; }
+
 /* Flow hotspot dots in the panel list */
 .flow-dot {
   width: 9px;

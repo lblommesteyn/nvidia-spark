@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { TorontoMap } from "./components/TorontoMap";
 import { MapLegend } from "./components/MapLegend";
+import { MapCamera } from "./components/MapCamera";
 import { LiveTV } from "./components/LiveTV";
 import { BusinessSetup } from "./components/BusinessSetup";
 import { AgentChat } from "./components/AgentChat";
@@ -572,6 +573,7 @@ export function App() {
             </div>
           )}
           <MapLegend />
+          <MapCamera business={selected} />
         </div>
 
         {/* ---- Panels (drag to reorder, resize from edges) ---- */}
