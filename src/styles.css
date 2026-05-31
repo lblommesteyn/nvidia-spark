@@ -2367,19 +2367,81 @@ body.lp-visible #particle-canvas {
   cursor: move;
 }
 
-/* ---- Agent tile: a light, intuitive accent so the product's centrepiece
- * reads as the primary tile without the heavy frosted "hero" treatment.
+/* ---- Agent tile: the product's centrepiece. Stronger accent border + glow,
+ * bolder title, and a clearer "primary" read so it stands out in the grid.
  * Scoped by gs-id so it applies in both the live and empty states. */
 .grid-stack-item[gs-id="agent"] .panel {
-  border: 1px solid rgba(54, 211, 153, 0.32);
-  box-shadow: 0 0 0 1px rgba(54, 211, 153, 0.08);
+  border: 1.5px solid rgba(54, 211, 153, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(54, 211, 153, 0.18),
+    0 0 28px -6px rgba(54, 211, 153, 0.38),
+    inset 0 0 40px -28px rgba(54, 211, 153, 0.5);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(54, 211, 153, 0.07), transparent 60%),
+    var(--panel-bg, rgba(15, 23, 32, 0.6));
 }
 .grid-stack-item[gs-id="agent"] .panel-header {
-  border-bottom-color: rgba(54, 211, 153, 0.22);
+  border-bottom-color: rgba(54, 211, 153, 0.3);
+}
+.grid-stack-item[gs-id="agent"] .panel-title {
+  font-size: 1.12rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 .grid-stack-item[gs-id="agent"] .panel-title::before {
   content: "★ ";
   color: var(--green);
+  text-shadow: 0 0 10px rgba(54, 211, 153, 0.7);
+}
+
+/* Right side of the agent header: model badge + Nemotron/Demand-model toggle */
+.agent-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.agent-model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--green);
+  background: rgba(54, 211, 153, 0.12);
+  border: 1px solid rgba(54, 211, 153, 0.4);
+  text-transform: capitalize;
+}
+.model-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.model-toggle-opt {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted, #93a4b3);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.model-toggle-opt:hover {
+  color: #e6edf3;
+}
+.model-toggle-opt.is-active {
+  background: rgba(54, 211, 153, 0.18);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(54, 211, 153, 0.4);
 }
 
 /* Gridstack resize handles → subtle, on-theme */

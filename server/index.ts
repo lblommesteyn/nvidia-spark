@@ -465,6 +465,9 @@ app.get("/api/cameras/nearest", async (c) => {
         lat: cam.lat,
         distanceM: Math.round(cam.distanceM),
         imageUrl: `/api/cameras/${cam.recId}/image`,
+        // Direct upstream https snapshot — lets the browser load the frame itself
+        // if our same-origin proxy can't egress (e.g. locked-down GPU host).
+        directUrl: cam.imageUrl,
       })),
     );
   } catch (err) {
@@ -555,6 +558,7 @@ app.post("/api/agent/stream", async (c) => {
   if (!body?.question) return c.json({ error: "question required" }, 400);
   if (!body.businessId) return c.json({ error: "businessId required for streaming" }, 400);
   const radiusM = Number(body.radiusM) || 750;
+  const useGradient = body.useGradient !== false;
 
   const stream = new ReadableStream<string>({
     async start(controller) {
@@ -569,7 +573,7 @@ app.post("/api/agent/stream", async (c) => {
       // Build the prompt/context once (may throw → report and close).
       let req;
       try {
-        req = await buildBusinessAgentRequest(body.businessId, body.question, radiusM);
+        req = await buildBusinessAgentRequest(body.businessId, body.question, radiusM, { useGradient });
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
         try { controller.close(); } catch { /* already closed */ }
@@ -577,7 +581,7 @@ app.post("/api/agent/stream", async (c) => {
       }
 
       const { provider, model } = describeProvider();
-      send({ meta: true, provider, model, contextUsed: req.contextUsed });
+      send({ meta: true, provider, model, gradientUsed: req.gradientUsed, contextUsed: req.contextUsed });
 
       // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
       // delta shape we don't recognise, or output that was entirely a stripped
