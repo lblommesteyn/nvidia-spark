@@ -10,6 +10,7 @@ export default defineConfig({
     // Vite proxies to the local backend below, so only this server needs to be
     // exposed — the API can stay bound to localhost.
     host: true,
+    allowedHosts: ["armband-ravioli-crayfish.ngrok-free.dev"],
     proxy: {
       // Forward API calls to the in-repo Node backend during development.
       "/api": {

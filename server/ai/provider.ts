@@ -81,7 +81,8 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
     : messages;
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (process.env.NEMOTRON_API_KEY) headers.Authorization = `Bearer ${process.env.NEMOTRON_API_KEY}`;
+  const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
     `${base}/chat/completions`,

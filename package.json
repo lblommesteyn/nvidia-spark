@@ -14,7 +14,8 @@
     "snapshot": "tsx scripts/snapshot-logger.ts",
     "backfill": "tsx scripts/backfill_snapshots.ts",
     "gen:bizdata": "tsx scripts/gen_business_data.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "gx10:nemotron": "bash scripts/gx10-nemotron.sh"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
