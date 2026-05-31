@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { businesses, snapshots, businessHistory, businessSchedule, type BusinessInput } from "./db.ts";
@@ -716,6 +717,18 @@ app.get("/api/patterns", async (c) => {
 app.get("/api/patterns/stats", (c) =>
   c.json({ total: snapshots.count(), locations: 0 }),
 );
+
+// ---- Static frontend (production single-port mode) ----
+// With SERVE_STATIC=1 (set by `npm run start`), serve the built SPA from ./dist
+// so the whole app runs on ONE port — no Vite dev server, no proxy. The frontend
+// uses relative /api paths, which now hit this same server directly. Registered
+// AFTER all /api routes so it never shadows them; the final catch-all returns
+// index.html for client-side routes (SPA fallback).
+if (process.env.SERVE_STATIC === "1") {
+  app.use("/*", serveStatic({ root: "./dist" }));
+  app.get("*", serveStatic({ path: "./dist/index.html" }));
+  console.log("[toronto-monitor] serving built frontend from ./dist (single-port mode)");
+}
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port });

@@ -35,8 +35,10 @@ Other handy commands:
 ```bash
 npm run dev          # frontend only
 npm run dev:server   # backend only
+npm run build        # build the production frontend into dist/
+npm run start        # production: build + serve everything on ONE port (:8787)
 npm run typecheck    # frontend + server typecheck
-bash scripts/tunnel.sh   # publish :3100 to the public ngrok URL (run on the GPU host)
+bash scripts/tunnel.sh   # publish to the public ngrok URL (run on the GPU host)
 ```
 
 ---
@@ -134,15 +136,27 @@ Alternative LLM wiring (pick one) — all documented inline in `.env.example`:
 | `GOOGLE_PLACES_API_KEY` | nearby business density / ratings | Toronto business-licences open data |
 | `METROLINX_API_KEY` | true GO GTFS-RT positions | schedule-accurate GO simulation |
 
-### Publishing the URL (demo)
+### Publishing the URL
 
-The public URL is an **ngrok tunnel from the GPU host** to the web server on `:3100`
-(only the frontend is exposed; the API + Nemotron stay on localhost). On the GPU box:
+**Option A — production single-port (recommended for the demo).** Build the
+frontend once and serve it straight from the backend, so the whole app runs on
+**one port (`:8787`)** with no Vite dev server and no proxy:
+
+```bash
+npm run start                      # builds dist/ then serves api+ml+asr on :8787
+PORT=8787 bash scripts/tunnel.sh   # in another terminal → prints the public URL
+```
+
+**Option B — dev server (live-editable).** Keeps hot-reload; tunnels the Vite
+server on `:3100`:
 
 ```bash
 npm run dev:all              # in one terminal
 bash scripts/tunnel.sh       # in another → prints the public URL
 ```
+
+Either way only the one public port is exposed; the API + Nemotron stay on
+localhost on the GPU host.
 
 ---
 

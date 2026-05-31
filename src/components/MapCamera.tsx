@@ -15,8 +15,17 @@ export function MapCamera({ business }: { business: Business | null }) {
   const [err, setErr] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [useDirect, setUseDirect] = useState(false);
+  const [zoom, setZoom] = useState(false);
   const [bust, setBust] = useState(() => Date.now());
   const tick = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Close the enlarged view on Escape.
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setZoom(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
 
   // Find the nearest camera whenever the business changes.
   useEffect(() => {
@@ -25,6 +34,7 @@ export function MapCamera({ business }: { business: Business | null }) {
     setErr(false);
     setImgFailed(false);
     setUseDirect(false);
+    setZoom(false);
     if (!business) return;
     api
       .nearestCamera(business.lon, business.lat)
@@ -75,7 +85,10 @@ export function MapCamera({ business }: { business: Business | null }) {
     }
   }
 
+  const imgSrc = `${baseSrc}${sep}t=${bust}`;
+
   return (
+    <>
     <div class={`map-camera${open ? "" : " is-collapsed"}`}>
       <button class="map-camera-head" onClick={() => setOpen((v) => !v)} title={open ? "Collapse camera" : "Expand camera"}>
         <span class="map-camera-dot" />
@@ -90,13 +103,29 @@ export function MapCamera({ business }: { business: Business | null }) {
           ) : imgFailed ? (
             <div class="map-camera-loading">Snapshot unavailable</div>
           ) : (
-            <img
-              class="map-camera-img"
-              src={`${baseSrc}${sep}t=${bust}`}
-              alt={`Traffic camera at ${cam.name}`}
-              onError={onImgError}
-              onLoad={() => setImgFailed(false)}
-            />
+            <div class="map-camera-frame">
+              <img
+                class="map-camera-img"
+                src={imgSrc}
+                alt={`Traffic camera at ${cam.name}`}
+                onError={onImgError}
+                onLoad={() => setImgFailed(false)}
+                onClick={() => setZoom(true)}
+              />
+              <button
+                class="map-camera-expand"
+                onClick={() => setZoom(true)}
+                title="Enlarge camera"
+                aria-label="Enlarge camera"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              </button>
+            </div>
           )}
           {cam && (
             <div class="map-camera-caption">
@@ -107,5 +136,19 @@ export function MapCamera({ business }: { business: Business | null }) {
         </div>
       )}
     </div>
+
+    {zoom && cam && !imgFailed && (
+      <div class="cam-lightbox" onClick={() => setZoom(false)} role="dialog" aria-modal="true">
+        <button class="cam-lightbox-close" onClick={() => setZoom(false)} aria-label="Close">×</button>
+        <figure class="cam-lightbox-fig" onClick={(e) => e.stopPropagation()}>
+          <img class="cam-lightbox-img" src={imgSrc} alt={`Traffic camera at ${cam.name}`} onError={onImgError} />
+          <figcaption class="cam-lightbox-cap">
+            <strong>{cam.name}</strong>
+            <span class="muted">{distLabel} · live · City of Toronto</span>
+          </figcaption>
+        </figure>
+      </div>
+    )}
+    </>
   );
 }
