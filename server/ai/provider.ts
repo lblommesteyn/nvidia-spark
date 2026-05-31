@@ -158,8 +158,7 @@ async function* openAISSE(
 async function* nemotronStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
   const base = (process.env.NEMOTRON_BASE_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
   const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
-  const directive = opts.reasoning === undefined ? null : `detailed thinking ${opts.reasoning ? "on" : "off"}`;
-  const msgs = directive ? [{ role: "system" as const, content: directive }, ...messages] : messages;
+  const msgs = withReasoningDirective(messages, opts);
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
   const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -172,12 +171,33 @@ async function* nemotronStream(messages: ChatMessage[], opts: ChatOptions): Asyn
   };
   // Strip <think>…</think> reasoning traces incrementally across chunk boundaries.
   const stripper = makeThinkStripper();
-  for await (const raw of openAISSE(`${base}/chat/completions`, headers, payload, 120_000)) {
-    const clean = stripper.push(raw);
-    if (clean) yield clean;
+  let emitted = 0;
+  let v1Err: unknown = null;
+  try {
+    for await (const raw of openAISSE(`${base}/chat/completions`, headers, payload, 120_000)) {
+      const clean = stripper.push(raw);
+      if (clean) {
+        emitted += clean.length;
+        yield clean;
+      }
+    }
+    const tail = stripper.flush();
+    if (tail) {
+      emitted += tail.length;
+      yield tail;
+    }
+  } catch (err) {
+    v1Err = err;
   }
-  const tail = stripper.flush();
-  if (tail) yield tail;
+  // Self-healing: the OpenAI-compat /v1 SSE is flaky on some Ollama builds and
+  // can yield nothing. If so, retry the SAME host over Ollama's native
+  // /api/chat (derive the host by stripping a trailing /v1), which streams
+  // reliably. A real NIM endpoint won't hit this path because /v1 works there.
+  if (emitted === 0) {
+    const nativeHost = base.replace(/\/v1$/, "");
+    console.warn(`[nemotron] /v1 stream produced nothing${v1Err ? ` (${v1Err instanceof Error ? v1Err.message : String(v1Err)})` : ""}; falling back to ${nativeHost}/api/chat`);
+    yield* ollamaNativeStream(nativeHost, model, msgs, ollamaOptions(opts));
+  }
 }
 
 async function* openaiStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
@@ -208,12 +228,29 @@ async function* ollamaStream(messages: ChatMessage[], opts: ChatOptions): AsyncG
   const host = process.env.OLLAMA_HOST ?? "http://localhost:11434";
   const model = process.env.OLLAMA_MODEL ?? "llama3.1";
   const msgs = withReasoningDirective(messages, opts);
+  yield* ollamaNativeStream(host, model, msgs, ollamaOptions(opts));
+}
+
+/** Build Ollama `options` (temperature, token limit) from ChatOptions. */
+function ollamaOptions(opts: ChatOptions): Record<string, unknown> {
   const options: Record<string, unknown> = { temperature: opts.temperature ?? 0.3 };
   if (opts.maxTokens) options.num_predict = opts.maxTokens;
+  return options;
+}
+
+/**
+ * Stream from Ollama's native /api/chat (newline-delimited JSON). This is the
+ * transport NVIDIA models served via Ollama stream reliably over (the OpenAI
+ * /v1 SSE path is flaky on some Ollama builds). Strips <think> traces inline.
+ */
+async function* ollamaNativeStream(
+  host: string,
+  model: string,
+  msgs: ChatMessage[],
+  options: Record<string, unknown>,
+): AsyncGenerator<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120_000);
-  // nemotron-3-nano (and other reasoning models on Ollama) emit <think>…</think>
-  // traces inline; strip them incrementally just like the NIM path.
   const stripper = makeThinkStripper();
   try {
     const res = await fetch(`${host}/api/chat`, {
@@ -328,42 +365,50 @@ function makeThinkStripper() {
 async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
   const base = (process.env.NEMOTRON_BASE_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
   const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
-
-  // Nemotron reasoning toggle is a system directive prepended to the system msg.
-  const directive = opts.reasoning === undefined
-    ? null
-    : `detailed thinking ${opts.reasoning ? "on" : "off"}`;
-  const msgs = directive
-    ? [{ role: "system" as const, content: directive }, ...messages]
-    : messages;
+  const msgs = withReasoningDirective(messages, opts);
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
-    `${base}/chat/completions`,
-    {
-      method: "POST",
-      timeoutMs: 120_000,
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: msgs,
-        temperature: opts.temperature ?? 0.3,
-        max_tokens: opts.maxTokens ?? 1024,
-      }),
-    },
-  );
-  const raw = res.choices[0]?.message?.content ?? "";
-  const text = stripThink(raw);
-  if (!text && raw.trim()) {
-    // The model returned only a reasoning trace (or an unclosed <think>) with no
-    // visible answer. Surface the raw text rather than swallowing the whole reply.
-    console.warn(`[nemotron] answer empty after <think> strip; raw len=${raw.length}, preview=${JSON.stringify(raw.slice(0, 200))}`);
-    return { text: raw.trim(), provider: "nemotron", model };
+  let raw = "";
+  try {
+    const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
+      `${base}/chat/completions`,
+      {
+        method: "POST",
+        timeoutMs: 120_000,
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: msgs,
+          temperature: opts.temperature ?? 0.3,
+          max_tokens: opts.maxTokens ?? 1024,
+        }),
+      },
+    );
+    raw = res.choices[0]?.message?.content ?? "";
+  } catch (err) {
+    console.warn(`[nemotron] /v1 chat failed (${err instanceof Error ? err.message : String(err)}); falling back to native /api/chat`);
   }
-  return { text, provider: "nemotron", model };
+
+  // Self-healing: if /v1 returned nothing (flaky on some Ollama builds), retry
+  // the same host over Ollama's native /api/chat.
+  if (!raw.trim()) {
+    const nativeHost = base.replace(/\/v1$/, "");
+    const r = await fetchJson<{ message: { content: string } }>(
+      `${nativeHost}/api/chat`,
+      {
+        method: "POST",
+        timeoutMs: 120_000,
+        body: JSON.stringify({ model, messages: msgs, stream: false, options: ollamaOptions(opts) }),
+      },
+    );
+    raw = r.message?.content ?? "";
+  }
+
+  const text = stripThink(raw);
+  return { text: text || raw.trim(), provider: "nemotron", model };
 }
 
 /**
