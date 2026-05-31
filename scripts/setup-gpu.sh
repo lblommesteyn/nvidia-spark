@@ -11,11 +11,12 @@ npm install
 
 # ── 2. Python deps ─────────────────────────────────────────────────────────────
 echo "[2/4] Installing Python ML dependencies..."
-pip install flask scikit-learn pandas numpy joblib --quiet
+PY=$(command -v python3 || command -v python)
+$PY -m pip install flask scikit-learn pandas numpy joblib --quiet
 
 # ── 3. Train ML models from bundled demand data ────────────────────────────────
 echo "[3/4] Training CityFlow demand models..."
-python ml/serve.py &
+$PY ml/serve.py &
 ML_PID=$!
 sleep 4
 
