@@ -13,9 +13,21 @@ export default defineConfig({
     allowedHosts: ["armband-ravioli-crayfish.ngrok-free.dev"],
     proxy: {
       // Forward API calls to the in-repo Node backend during development.
+      // SSE endpoints (/api/agent/stream, /api/alerts/stream) need buffering
+      // disabled so tokens arrive in real time instead of being held until the
+      // connection closes.
       "/api": {
         target: "http://localhost:8787",
         changeOrigin: true,
+        // Disable Vite's response buffering for SSE streams.
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, req) => {
+            if (req.url?.includes("/stream")) {
+              proxyRes.headers["x-accel-buffering"] = "no";
+              proxyRes.headers["cache-control"] = "no-cache";
+            }
+          });
+        },
       },
     },
     watch: {
