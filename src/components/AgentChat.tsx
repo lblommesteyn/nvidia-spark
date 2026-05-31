@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api, type Business } from "../services/api";
+import { Markdown } from "./Markdown";
 
 interface Msg {
   role: "user" | "agent";
@@ -291,7 +292,9 @@ export function AgentChat({ business }: { business: Business }) {
         {messages.map((m, i) => (
           <div key={i} class={`bubble bubble-${m.role}`}>
             {m.role === "agent" && m.provider && <span class="bubble-tag">{m.provider}</span>}
-            <div class="bubble-text">{m.text}</div>
+            {m.role === "agent"
+              ? <Markdown class="bubble-text" text={m.text} />
+              : <div class="bubble-text">{m.text}</div>}
           </div>
         ))}
         {busy && <div class="bubble bubble-agent"><div class="bubble-text muted">Thinking…</div></div>}

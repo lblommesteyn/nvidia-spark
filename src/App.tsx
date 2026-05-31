@@ -45,7 +45,7 @@ const CATEGORY_DESC: Record<CivicRecord["category"], string> = {
   environment: "Environmental readings around your location.",
   alert: "Live TTC disruptions & diversions that reroute crowds onto nearby streets.",
   parking: "Green P municipal lots & garages — local parking supply.",
-  aviation: "Inbound flights to Toronto — a visitor / tourism inflow signal.",
+  aviation: "Inbound flights in the air over Toronto right now — a live visitor / tourism inflow signal.",
 };
 
 const SIGNAL_LABEL: Record<string, string> = {
@@ -143,18 +143,10 @@ export function App() {
 
   const tiles: GridTile[] = [
     {
-      id: "alerts",
-      x: 0,
-      y: 0,
-      w: 12,
-      h: 5,
-      content: <AlertFeed />,
-    },
-    {
       id: "agent",
       x: 0,
-      y: 5,
-      w: 12,
+      y: 0,
+      w: 8,
       h: 8,
       content: selected ? (
         <AgentChat business={selected} />
@@ -173,9 +165,17 @@ export function App() {
       ),
     },
     {
+      id: "alerts",
+      x: 8,
+      y: 0,
+      w: 4,
+      h: 8,
+      content: <AlertFeed />,
+    },
+    {
       id: "forecast",
       x: 0,
-      y: 18,
+      y: 8,
       w: 12,
       h: 6,
       content: (
@@ -286,9 +286,9 @@ export function App() {
     {
       id: "livetv",
       x: 0,
-      y: 13,
-      w: 7,
-      h: 6,
+      y: 14,
+      w: 8,
+      h: 5,
       content: (
         <Panel
           title="Live Toronto TV"
@@ -302,10 +302,10 @@ export function App() {
     },
     {
       id: "flow",
-      x: 7,
-      y: 13,
-      w: 5,
-      h: 6,
+      x: 8,
+      y: 14,
+      w: 4,
+      h: 5,
       content: (
         <Panel
           title="City Flow — Hotspots"
@@ -340,7 +340,7 @@ export function App() {
         <Panel
           title="Upcoming Events, Games & Concerts"
           status={eventGroup?.status ?? "loading"}
-          description="Stadium games, concerts and big events that pull crowds nearby — pro sports (ESPN, live), plus Ticketmaster & PredictHQ when keys are set."
+          description="Looking ahead ~9 months (soonest first): stadium games, concerts & big events that pull crowds nearby — pro sports (ESPN, live), plus Ticketmaster & PredictHQ when keys are set."
           count={eventGroup?.nearby.length}
           updatedAt={eventGroup?.fetchedAt}
           note={eventGroup?.note}
@@ -398,8 +398,8 @@ export function App() {
       id: "weather",
       x: 0,
       y: 24,
-      w: 3,
-      h: 2,
+      w: 4,
+      h: 4,
       content: (
         <Panel
           title="Weather"
@@ -422,10 +422,10 @@ export function App() {
     },
     {
       id: "airquality",
-      x: 3,
+      x: 4,
       y: 24,
-      w: 3,
-      h: 2,
+      w: 4,
+      h: 4,
       content: (
         <Panel
           title="Air Quality"
@@ -448,8 +448,8 @@ export function App() {
     },
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
-      x: (i % 3) * 4,
-      y: 27 + Math.floor(i / 3) * 4,
+      x: ((i + 2) % 3) * 4,
+      y: 24 + Math.floor((i + 2) / 3) * 4,
       w: 4,
       h: 4,
       content: (

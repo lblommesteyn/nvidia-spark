@@ -2566,6 +2566,41 @@ body.lp-visible #particle-canvas {
   margin-bottom: 3px;
 }
 
+/* ---- Markdown (agent output) ---- */
+.md { white-space: normal; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md .md-p { margin: 0 0 6px; }
+.md .md-h {
+  margin: 8px 0 4px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.md .md-h3 { font-size: 12px; }
+.md .md-h4, .md .md-h5, .md .md-h6 { font-size: 11px; }
+.md .md-ul, .md .md-ol { margin: 4px 0 6px; padding-left: 18px; }
+.md .md-ul li, .md .md-ol li { margin: 2px 0; }
+.md .md-ul { list-style: disc; }
+.md .md-ol { list-style: decimal; }
+.md strong { color: var(--text); font-weight: 600; }
+.md em { font-style: italic; }
+.md .md-code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.md .md-link { color: var(--green); text-decoration: underline; }
+.md .md-quote {
+  margin: 4px 0;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+}
+
 .chat-input {
   display: flex;
   gap: 6px;
