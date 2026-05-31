@@ -1991,18 +1991,11 @@ body.lp-visible #particle-canvas {
   flex-direction: column;
 }
 
-/* ---- Map section ----
- * Tall, sticky "hero": it pins to the top of the scroll area while the tile
- * grid scrolls up over it. The translucent top tiles let the live map show
- * through as they pass over it; opaque tiles below cover it cleanly. Keep
- * z-index below the grid so the tiles win the overlap.
- */
+/* ---- Map section ---- */
 .map-section {
-  position: sticky;
-  top: 0;
-  z-index: 0;
-  height: 62vh;
-  min-height: 340px;
+  position: relative;
+  height: 48vh;
+  min-height: 280px;
   border-bottom: 1px solid var(--border);
   flex: none;
 }
@@ -2099,7 +2092,7 @@ body.lp-visible #particle-canvas {
 .layer-toggle {
   position: absolute;
   left: 8px;
-  bottom: 96px;
+  bottom: 38px;
   background: rgba(10, 10, 10, 0.88);
   border: 1px solid var(--border);
   padding: 7px 9px;
@@ -2198,7 +2191,7 @@ body.lp-visible #particle-canvas {
 .map-legend {
   position: absolute;
   left: 50%;
-  top: 10px;
+  bottom: 10px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -2274,11 +2267,6 @@ body.lp-visible #particle-canvas {
 
 /* ---- Dashboard grid (Gridstack) ---- */
 .dashboard-grid {
-  position: relative;
-  z-index: 1;
-  /* Pull the grid up so its top row gently overlaps the bottom of the sticky
-     map; the translucent agent/alerts tiles then "float" over the live map. */
-  margin-top: -72px;
   padding: 4px;
 }
 
@@ -2302,34 +2290,15 @@ body.lp-visible #particle-canvas {
   cursor: move;
 }
 
-/* ---- Top tiles: frosted glass so the live map shows through as they scroll
- * over it. The agent tile additionally gets a "hero" glow — it's the product's
- * centrepiece. Scoped by gs-id so it applies in both the live and empty states. */
-.grid-stack-item[gs-id="agent"] .panel,
-.grid-stack-item[gs-id="alerts"] .panel {
-  background: rgba(12, 17, 26, 0.64);
-  backdrop-filter: blur(12px) saturate(1.12);
-  -webkit-backdrop-filter: blur(12px) saturate(1.12);
-}
-.grid-stack-item[gs-id="alerts"] .panel-header {
-  background: rgba(18, 26, 38, 0.5);
-}
-
-/* Flagship agent tile */
+/* ---- Agent tile: a light, intuitive accent so the product's centrepiece
+ * reads as the primary tile without the heavy frosted "hero" treatment.
+ * Scoped by gs-id so it applies in both the live and empty states. */
 .grid-stack-item[gs-id="agent"] .panel {
-  border: 1px solid rgba(54, 211, 153, 0.45);
-  box-shadow:
-    0 0 0 1px rgba(54, 211, 153, 0.12),
-    0 18px 50px -12px rgba(0, 0, 0, 0.7),
-    0 0 46px -8px rgba(54, 211, 153, 0.28);
+  border: 1px solid rgba(54, 211, 153, 0.32);
+  box-shadow: 0 0 0 1px rgba(54, 211, 153, 0.08);
 }
 .grid-stack-item[gs-id="agent"] .panel-header {
-  background: linear-gradient(180deg, rgba(54, 211, 153, 0.16), rgba(18, 26, 38, 0.55));
-  border-bottom-color: rgba(54, 211, 153, 0.3);
-}
-.grid-stack-item[gs-id="agent"] .panel-title {
-  font-size: 14px;
-  letter-spacing: 0.4px;
+  border-bottom-color: rgba(54, 211, 153, 0.22);
 }
 .grid-stack-item[gs-id="agent"] .panel-title::before {
   content: "★ ";
@@ -2350,12 +2319,9 @@ body.lp-visible #particle-canvas {
 }
 
 .grid-hint {
-  flex: none;
-  padding: 6px 12px;
+  padding: 2px 8px 8px;
   font-size: 10px;
   color: var(--text-faint);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
 }
 .linklike {
   background: none;
@@ -2703,6 +2669,35 @@ body.lp-visible #particle-canvas {
   padding: 2px 0 2px 8px;
   border-left: 2px solid var(--border);
   color: var(--text-dim);
+}
+.md .md-hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.md .md-table {
+  width: 100%;
+  margin: 6px 0 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+.md .md-table th,
+.md .md-table td {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.md .md-table thead th {
+  background: var(--panel-2, rgba(255, 255, 255, 0.04));
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.md .md-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 /* Streaming indicators */
