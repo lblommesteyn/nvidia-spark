@@ -449,4 +449,24 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ rows }),
     }).then(json<{ inserted: number }>),
+
+  asrHealth: () =>
+    fetch("/api/asr/health").then(json<{
+      available: boolean;
+      loaded?: boolean;
+      url?: string;
+      error?: string;
+      hint?: string;
+    }>),
+
+  asrTranscribe: async (audio: Blob, filename = "recording.webm") => {
+    const form = new FormData();
+    form.append("audio", audio, filename);
+    const res = await fetch("/api/asr/transcribe", { method: "POST", body: form });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      throw new Error(err || `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ text: string }>;
+  },
 };

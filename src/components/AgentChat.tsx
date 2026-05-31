@@ -110,6 +110,14 @@ export function AgentChat({ business }: { business: Business }) {
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
   const streamBuf    = useRef("");
+  const [voiceOn, setVoiceOn]       = useState(false);
+  const [asrReady, setAsrReady]     = useState(false);
+  const [asrStatus, setAsrStatus]   = useState("");
+  const [recording, setRecording]   = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceErr, setVoiceErr]     = useState<string | null>(null);
+  const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const audioChunks   = useRef<Blob[]>([]);
 
   const hasData = summary && summary.totalDays > 0;
 
@@ -127,6 +135,102 @@ export function AgentChat({ business }: { business: Business }) {
   }
 
   useEffect(() => { loadData(); }, [business.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () =>
+      api.asrHealth()
+        .then((d) => {
+          if (cancelled) return;
+          setAsrReady(d.available);
+          if (d.available) {
+            setAsrStatus(d.loaded ? "ASR ready" : "ASR up (model loads on first mic use)");
+          } else {
+            setAsrStatus(d.hint ?? `ASR offline — API cannot reach ${d.url ?? "Parakeet"}`);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAsrReady(false);
+            setAsrStatus("ASR offline — is npm run dev:server on the same machine as Parakeet?");
+          }
+        });
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  async function transcribeAndAsk(blob: Blob) {
+    if (!blob.size) {
+      setVoiceErr("No audio captured — hold Mic longer, then Stop.");
+      return;
+    }
+    setTranscribing(true);
+    setVoiceErr(null);
+    try {
+      const { text } = await api.asrTranscribe(blob, blob.type.includes("wav") ? "recording.wav" : "recording.webm");
+      if (!text.trim()) {
+        setVoiceErr("No speech detected.");
+        return;
+      }
+      setInput(text);
+      await ask(text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      let detail = msg;
+      try {
+        const j = JSON.parse(msg) as { error?: string };
+        if (j.error) detail = j.error;
+      } catch { /* plain text */ }
+      setVoiceErr(detail.length > 120 ? `${detail.slice(0, 120)}…` : detail || "Transcription failed");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      const rec = mediaRecorder.current;
+      if (rec?.state === "recording") rec.requestData();
+      rec?.stop();
+      return;
+    }
+    setVoiceErr(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceErr("Mic needs https:// or http://localhost (not plain LAN IP).");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks.current = [];
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const rec = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.current = rec;
+      rec.ondataavailable = (e) => { if (e.data.size) audioChunks.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+        const blob = new Blob(audioChunks.current, { type: mime });
+        void transcribeAndAsk(blob);
+      };
+      rec.onerror = () => setVoiceErr("Recording failed.");
+      rec.start(250);
+      setRecording(true);
+    } catch {
+      setVoiceErr("Microphone access denied — allow mic in browser settings.");
+    }
+  }
+
+  function handleSubmit(e: Event) {
+    e.preventDefault();
+    if (voiceOn && recording) {
+      mediaRecorder.current?.stop();
+      return;
+    }
+    ask(input);
+  }
 
   async function ask(question: string) {
     if (!question.trim() || busy) return;
@@ -342,14 +446,48 @@ export function AgentChat({ business }: { business: Business }) {
         ))}
       </div>
 
-      <form class="chat-input" onSubmit={(e) => { e.preventDefault(); ask(input); }}>
+      <div class="chat-voice-bar">
+        <button
+          type="button"
+          class={`chip-btn chat-voice-toggle${voiceOn ? " is-active" : ""}`}
+          onClick={() => { setVoiceOn((v) => !v); setVoiceErr(null); }}
+          title="Speak → Parakeet transcribes → Nemotron answers"
+        >
+          {voiceOn ? "Voice on" : "Voice (Parakeet)"}
+        </button>
+        {voiceOn && (
+          <button
+            type="button"
+            class={`btn-ghost chat-mic-btn${recording ? " is-recording" : ""}`}
+            onClick={toggleRecording}
+            disabled={busy || transcribing}
+            title={recording ? "Stop and transcribe" : "Record question"}
+          >
+            {transcribing ? "Transcribing…" : recording ? "Stop" : "Mic"}
+          </button>
+        )}
+        <span class="chat-voice-status muted">{asrStatus || (asrReady ? "ASR ready" : "Checking ASR…")}</span>
+        {voiceErr && <span class="chat-voice-err muted">{voiceErr}</span>}
+      </div>
+
+      <form class="chat-input" onSubmit={handleSubmit}>
         <input
           value={input}
           onInput={(e) => setInput((e.target as HTMLInputElement).value)}
-          placeholder={hasData ? "Ask about staffing, revenue patterns, city conditions…" : "Ask about city conditions around your business…"}
-          disabled={busy}
+          placeholder={
+            voiceOn
+              ? (recording ? "Listening… click Stop or Send when done" : "Speak with Mic, or type — Send transcribes & asks Nemotron")
+              : (hasData ? "Ask about staffing, revenue patterns, city conditions…" : "Ask about city conditions around your business…")
+          }
+          disabled={busy || transcribing}
         />
-        <button type="submit" class="btn-primary" disabled={busy || !input.trim()}>Send</button>
+        <button
+          type="submit"
+          class="btn-primary"
+          disabled={busy || transcribing || (voiceOn ? recording : !input.trim())}
+        >
+          {transcribing ? "…" : "Send"}
+        </button>
       </form>
     </section>
   );

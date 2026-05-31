@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "dev:ml": "python3 ml/serve.py 2>/dev/null || python ml/serve.py",
-    "dev:all": "concurrently -n web,api,ml -c cyan,magenta,yellow \"npm:dev\" \"npm:dev:server\" \"npm:dev:ml\"",
+    "dev:ml": "bash scripts/run-ml.sh",
+    "dev:parakeet": "bash scripts/run-parakeet.sh",
+    "dev:all": "concurrently -n web,api,ml,asr -c cyan,magenta,yellow,green \"npm:dev\" \"npm:dev:server\" \"npm:dev:ml\" \"npm:dev:parakeet\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "gen:dataset": "tsx scripts/gen-forecast-dataset.ts",

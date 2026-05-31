@@ -31,6 +31,7 @@ import {
 } from "./ai/alerts.ts";
 import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
+import { parakeetHealth, parakeetTranscribe, PARAKEET_BASE } from "./ai/parakeet.ts";
 import { rlOptimizer } from "./ai/rloptimizer.ts";
 import { aiManifest } from "./manifest.ts";
 import type { CivicRecord, GeoPoint } from "./types.ts";
@@ -376,6 +377,36 @@ app.post("/api/businesses/:id/schedule", async (c) => {
   }));
   businessSchedule.upsertMany(rows);
   return c.json({ inserted: rows.length });
+});
+
+// ---- Parakeet ASR (speech → text for agent input) ----
+app.get("/api/asr/health", async (c) => {
+  const h = await parakeetHealth();
+  return c.json({
+    available: h.available,
+    loaded: h.loaded,
+    url: h.url,
+    error: h.error,
+    hint: !h.available
+      ? `Parakeet not reachable at ${PARAKEET_BASE} — set PARAKEET_URL in .env (e.g. http://10.10.25.20:8789)`
+      : undefined,
+  });
+});
+
+app.post("/api/asr/transcribe", async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.audio;
+  if (!file || typeof file === "string") return c.json({ error: "audio file required" }, 400);
+  const buf = Buffer.from(await file.arrayBuffer());
+  try {
+    const text = await parakeetTranscribe(buf, file.name || "audio.webm");
+    if (text === null) return c.json({ error: "ASR service unavailable" }, 503);
+    if (!text) return c.json({ error: "empty transcript — speak longer or check the mic" }, 422);
+    return c.json({ text });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "transcription failed";
+    return c.json({ error: msg }, 503);
+  }
 });
 
 // ---- ML microservice proxy ----

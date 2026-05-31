@@ -9,14 +9,13 @@ echo "=== CityFlow GPU Setup ==="
 echo "[1/4] Installing Node dependencies..."
 npm install
 
-# ── 2. Python deps ─────────────────────────────────────────────────────────────
-echo "[2/4] Installing Python ML dependencies..."
-PY=$(command -v python3 || command -v python)
-$PY -m pip install flask scikit-learn pandas numpy joblib --quiet
+# ── 2. Python deps (.venv — avoids PEP 668 system pip errors) ───────────────
+echo "[2/4] Installing Python ML dependencies into .venv..."
+PY="$(bash scripts/ensure-python-venv.sh)"
 
 # ── 3. Train ML models from bundled demand data ────────────────────────────────
 echo "[3/4] Training CityFlow demand models..."
-$PY ml/serve.py &
+"$PY" ml/serve.py &
 ML_PID=$!
 sleep 4
 
