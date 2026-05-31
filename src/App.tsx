@@ -403,18 +403,30 @@ export function App() {
         <Panel
           title="Data Sources"
           status={context ? "live" : "loading"}
-          description="Provenance of every feed powering this dashboard. LIVE = real city/open data."
+          description="Provenance of every feed powering this dashboard. LIVE = real city/open data. Each row links to its source."
           count={totalSources}
           dataHref={`/api/context?${ctxQuery}`}
         >
           {context ? (
             <ul class="list">
-              <li><strong>Weather</strong><span class={`badge badge-${context.weather.status}`}><i class="badge-dot" />{context.weather.status.toUpperCase()}</span></li>
-              <li><strong>Air Quality</strong><span class={`badge badge-${context.airQuality.status}`}><i class="badge-dot" />{context.airQuality.status.toUpperCase()}</span></li>
+              <li>
+                <strong>Weather</strong>
+                <a class="src-link" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo ↗</a>
+                <span class={`badge badge-${context.weather.status}`} style={{ marginLeft: "auto" }}><i class="badge-dot" />{context.weather.status.toUpperCase()}</span>
+              </li>
+              <li>
+                <strong>Air Quality</strong>
+                <a class="src-link" href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noopener noreferrer">Open-Meteo Air Quality ↗</a>
+                <span class={`badge badge-${context.airQuality.status}`} style={{ marginLeft: "auto" }}><i class="badge-dot" />{context.airQuality.status.toUpperCase()}</span>
+              </li>
               {context.civic.map((g) => (
                 <li key={g.source}>
                   <strong>{CATEGORY_LABEL[g.category]}</strong>
-                  <span class="muted"> {g.label}</span>
+                  {g.url ? (
+                    <a class="src-link" href={g.url} target="_blank" rel="noopener noreferrer" title={g.attribution ?? g.label}>{g.label} ↗</a>
+                  ) : (
+                    <span class="muted"> {g.label}</span>
+                  )}
                   <span class={`badge badge-${g.status}`} style={{ marginLeft: "auto" }}><i class="badge-dot" />{g.status.toUpperCase()}</span>
                 </li>
               ))}

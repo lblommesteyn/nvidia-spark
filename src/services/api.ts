@@ -31,6 +31,7 @@ export interface CivicGroup {
   category: CivicRecord["category"];
   status: "live" | "demo" | "error";
   attribution?: string;
+  url?: string;
   fetchedAt: string;
   note?: string;
   nearby: CivicRecord[];

@@ -2516,6 +2516,20 @@ body.lp-visible #particle-canvas {
 }
 .list li:last-child { border-bottom: none; }
 .list strong { font-weight: 600; }
+.src-link {
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.src-link:hover {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
 
 .dist {
   color: var(--green);

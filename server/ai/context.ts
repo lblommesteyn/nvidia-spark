@@ -2,6 +2,7 @@ import { distanceM } from "../geo.ts";
 import {
   CIVIC_SOURCES,
   loadCivicSource,
+  sourceUrl,
   type CivicSourceDef,
 } from "../sources/civic.ts";
 import { getAirQuality, getWeather, type AirQualityNow, type WeatherNow } from "../sources/environment.ts";
@@ -27,6 +28,8 @@ export interface CivicGroup {
   category: CivicRecord["category"];
   status: SourceResult<unknown>["status"];
   attribution?: string;
+  /** Public "view source" link (Open Data Toronto dataset page or provider site). */
+  url?: string;
   /** When this source's data was fetched (ISO), for "updated X ago" in the UI. */
   fetchedAt: string;
   note?: string;
@@ -220,6 +223,7 @@ export async function buildContext(scope: ContextScope): Promise<LocationContext
       category: def.category,
       status: result.status,
       attribution: result.attribution,
+      url: sourceUrl(def),
       fetchedAt: result.fetchedAt,
       note: result.note,
       nearby,
