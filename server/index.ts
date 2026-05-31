@@ -394,7 +394,9 @@ app.get("/api/alerts/stream", (c) => {
     },
   });
 
-  return new Response(stream, {
+  // The SSE pipeline enqueues strings (see alerts.ts); valid at runtime for
+  // text/event-stream but BodyInit's types only model ReadableStream<Uint8Array>.
+  return new Response(stream as unknown as ReadableStream<Uint8Array>, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",

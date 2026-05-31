@@ -82,7 +82,7 @@ function parseCSV(text: string, businessId: string, type: "history" | "schedule"
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-  return lines.slice(1).flatMap((line) => {
+  return lines.slice(1).flatMap((line): object[] => {
     const vals = line.split(",").map((v) => v.trim());
     const row: Record<string, unknown> = {};
     headers.forEach((h, i) => { row[h] = vals[i] ?? ""; });

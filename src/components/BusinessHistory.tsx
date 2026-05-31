@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, type Business } from "../services/api";
+import { type Business } from "../services/api";
 
 interface HistoryRow {
   date: string;
@@ -31,7 +31,7 @@ function parseCSV(text: string, businessId: string, type: "history" | "schedule"
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-  return lines.slice(1).flatMap((line) => {
+  return lines.slice(1).flatMap((line): object[] => {
     const vals = line.split(",").map((v) => v.trim());
     const row: Record<string, unknown> = { business_id: businessId };
     headers.forEach((h, i) => { row[h] = vals[i] ?? ""; });
