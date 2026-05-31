@@ -1,0 +1,8 @@
+flask>=3.0
+scikit-learn>=1.4
+pandas>=2.0
+numpy>=1.26
+joblib>=1.3
+
+# Parakeet ASR (optional — install into the same .venv):
+#   .venv/bin/pip install "nemo_toolkit[asr]"

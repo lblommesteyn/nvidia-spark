@@ -2736,6 +2736,38 @@ body.lp-visible #particle-canvas {
   75% { content: "..."; }
 }
 
+.chat-voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+  flex-wrap: wrap;
+}
+
+.chat-voice-toggle.is-active {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.chat-mic-btn.is-recording {
+  color: #f44;
+  border-color: #f44;
+  animation: pulse-rec 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+  50% { opacity: 0.55; }
+}
+
+.chat-voice-status {
+  font-size: 11px;
+}
+
+.chat-voice-err {
+  font-size: 11px;
+  color: #f88;
+}
+
 .chat-input {
   display: flex;
   gap: 6px;
