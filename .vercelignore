@@ -1,0 +1,30 @@
+# Vercel only builds the frontend (npm run build -> dist/). Exclude everything
+# the build doesn't need — especially the large ML data, venv, DB, and binaries
+# that trip Vercel's 100 MB upload limit.
+node_modules
+.venv
+venv
+dist
+
+# Large datasets / model artifacts / DB — backend & ML only, not the frontend.
+data
+cityflow_ML_model
+ml
+
+# Backend (runs on Railway, not Vercel).
+server
+deploy
+
+# Scripts, docs, misc.
+scripts
+docs
+*.log
+*.deb
+vscode_arm64.deb
+.env
+**/__pycache__
+*.pyc
+
+# Git / editor noise
+.git
+.DS_Store
