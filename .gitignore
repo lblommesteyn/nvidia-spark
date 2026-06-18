@@ -19,3 +19,5 @@ cityflow_ML_model/restaurant_model.joblib
 cityflow_ML_model/synthetic_demand_*.csv
 cityflow_ML_model/cityflow_demand_*.csv
 out/
+.vercel
+.env*
