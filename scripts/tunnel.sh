@@ -11,13 +11,15 @@
 #   - the app already running:      npm run dev:all
 #
 # Usage:
-#   bash scripts/tunnel.sh                 # uses the defaults below
+#   bash scripts/tunnel.sh                 # uses the defaults below (prod :8787)
 #   NGROK_DOMAIN=foo.ngrok-free.dev bash scripts/tunnel.sh
-#   PORT=3100 bash scripts/tunnel.sh
+#   PORT=3100 bash scripts/tunnel.sh       # for dev mode (npm run dev:all)
 #
 set -euo pipefail
 
-PORT="${PORT:-3100}"
+# Default targets the production single-port server (npm run start, :8787).
+# Use PORT=3100 for dev mode (npm run dev:all).
+PORT="${PORT:-8787}"
 NGROK_DOMAIN="${NGROK_DOMAIN:-armband-ravioli-crayfish.ngrok-free.dev}"
 
 if ! command -v ngrok >/dev/null 2>&1; then
