@@ -12,6 +12,7 @@ import { getTraffic } from "./sources/traffic.ts";
 import { getTransitRoutes } from "./sources/transit-routes.ts";
 import { transitContext } from "./sources/transit-nearby.ts";
 import { getGoTrains } from "./sources/go-transit.ts";
+import { holidaysSource } from "./sources/holidays.ts";
 import { buildContext, scopeFromBusiness } from "./ai/context.ts";
 import {
   forecastForBusiness,
@@ -198,6 +199,12 @@ app.get("/api/transit/routes", (c) => {
 /** GO Train positions (synthetic until a Metrolinx key is wired). */
 app.get("/api/transit/go", (c) => {
   return c.json(getGoTrains());
+});
+
+// ---- Statutory holidays (Ontario) ----
+app.get("/api/holidays", (c) => {
+  const n = Math.min(Math.max(Number(c.req.query("n") ?? 6), 1), 24);
+  return c.json(holidaysSource(n));
 });
 
 // ---- Location context (the AI-friendly digest) ----

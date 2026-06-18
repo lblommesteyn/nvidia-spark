@@ -2773,6 +2773,36 @@ body.lp-visible #particle-canvas {
   flex: none;
 }
 
+/* ---- Upcoming statutory holidays strip (events tile) ---- */
+.holiday-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(124, 156, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(124, 156, 255, 0.08);
+}
+.holiday-strip-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7c9cff;
+}
+.holiday-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(124, 156, 255, 0.12);
+  white-space: nowrap;
+}
+.holiday-chip strong {
+  font-weight: 600;
+}
+
 /* ---- Live TV ---- */
 .livetv {
   display: flex;

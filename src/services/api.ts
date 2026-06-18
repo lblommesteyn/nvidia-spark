@@ -27,6 +27,14 @@ export interface Business {
   updatedAt: string;
 }
 
+export interface Holiday {
+  /** YYYY-MM-DD (Toronto local date). */
+  date: string;
+  name: string;
+  /** Days until the holiday; 0 = today. */
+  inDays: number;
+}
+
 export interface TransitNearby {
   lon: number;
   lat: number;
@@ -423,6 +431,11 @@ export const api = {
   transitRoutes: () => apiFetch("/api/transit/routes").then(json<RouteCollection>),
 
   goTrains: () => apiFetch("/api/transit/go").then(json<GoTrainCollection>),
+
+  holidays: (n = 6) =>
+    apiFetch(`/api/holidays?n=${n}`).then(
+      json<{ status: string; note: string; data: Holiday[] }>,
+    ),
 
   agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number }) =>
     apiFetch("/api/agent", {

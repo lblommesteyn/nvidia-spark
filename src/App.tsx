@@ -8,7 +8,7 @@ import { AgentChat } from "./components/AgentChat";
 import { AlertFeed } from "./components/AlertFeed";
 import { Panel } from "./components/Panel";
 import { DashboardGrid, resetDashboardLayout, type GridTile } from "./components/DashboardGrid";
-import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type LocationContext, type WeeklyForecast } from "./services/api";
+import { api, type Business, type CivicRecord, type DemandForecast, type DemandLevel, type FlowCollection, type Holiday, type LocationContext, type WeeklyForecast } from "./services/api";
 
 const FORECAST_COLOR: Record<DemandLevel, string> = {
   low: "#5a8dd6",
@@ -89,6 +89,7 @@ export function App() {
   const [forecast, setForecast] = useState<DemandForecast | null>(null);
   const [week, setWeek] = useState<WeeklyForecast | null>(null);
   const [flow, setFlow] = useState<FlowCollection | null>(null);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [provider, setProvider] = useState<string>("…");
   const [showSetup, setShowSetup] = useState(false);
   const [liveTvStatus, setLiveTvStatus] = useState<"live" | "demo" | "loading">("loading");
@@ -103,6 +104,7 @@ export function App() {
     api.health().then((h) => setProvider(h.provider)).catch(() => setProvider("offline"));
     api.listBusinesses().then(setBusinesses).catch(() => {});
     api.flow().then(setFlow).catch(() => {});
+    api.holidays(4).then((h) => setHolidays(h.data)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -370,7 +372,7 @@ export function App() {
         <Panel
           title="Upcoming Events, Games & Concerts"
           status={eventGroup?.status ?? "loading"}
-          description="Looking ahead ~9 months (soonest first): stadium games, concerts & big events that pull crowds nearby — pro sports (ESPN, live), plus Ticketmaster & PredictHQ when keys are set."
+          description="Soonest first: stadium games, concerts & big events that pull crowds nearby — pro sports + FIFA World Cup 2026 (ESPN, live), plus Ticketmaster & PredictHQ when keys are set. Upcoming Ontario stat holidays shown too."
           count={eventGroup?.nearby.length}
           updatedAt={eventGroup?.fetchedAt}
           note={eventGroup?.note}
@@ -381,15 +383,31 @@ export function App() {
           ) : eventGroup.nearby.length === 0 ? (
             <div class="muted">No events found nearby right now.</div>
           ) : (
-            <ul class="list">
-              {eventGroup.nearby.slice(0, 12).map((r) => (
-                <li key={r.id}>
-                  <strong>{r.title}</strong>
-                  {r.detail && <span class="muted"> — {r.detail}</span>}
-                  {r.distanceM != null && <span class="dist">{r.distanceM}m</span>}
-                </li>
-              ))}
-            </ul>
+            <>
+              {holidays.length > 0 && (
+                <div class="holiday-strip" title="Ontario statutory holidays affect demand & hours">
+                  <span class="holiday-strip-label">Stat holidays</span>
+                  {holidays.slice(0, 3).map((h) => (
+                    <span key={h.date} class="holiday-chip">
+                      <strong>{h.name}</strong>
+                      <span class="muted">
+                        {" "}
+                        {h.inDays === 0 ? "today" : h.inDays === 1 ? "tomorrow" : `in ${h.inDays}d`}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <ul class="list">
+                {eventGroup.nearby.slice(0, 12).map((r) => (
+                  <li key={r.id}>
+                    <strong>{r.title}</strong>
+                    {r.detail && <span class="muted"> — {r.detail}</span>}
+                    {r.distanceM != null && <span class="dist">{r.distanceM}m</span>}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </Panel>
       ),

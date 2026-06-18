@@ -14,6 +14,7 @@
 import { nowIso } from "../../cache.ts";
 import type { CivicRecord, SourceResult } from "../../types.ts";
 import { loadEspnEvents } from "./espn.ts";
+import { loadWorldCupEvents } from "./worldcup.ts";
 import { loadTicketmasterEvents, ticketmasterEnabled } from "./ticketmaster.ts";
 import { loadPredictHqEvents, predicthqEnabled } from "./predicthq.ts";
 
@@ -38,8 +39,9 @@ function dedupe(records: CivicRecord[]): CivicRecord[] {
 }
 
 export async function loadEvents(): Promise<SourceResult<CivicRecord[]>> {
-  const [espn, tm, phq] = await Promise.allSettled([
+  const [espn, worldcup, tm, phq] = await Promise.allSettled([
     loadEspnEvents(),
+    loadWorldCupEvents(),
     loadTicketmasterEvents(),
     loadPredictHqEvents(),
   ]);
@@ -64,6 +66,7 @@ export async function loadEvents(): Promise<SourceResult<CivicRecord[]>> {
   };
 
   take(espn, "ESPN sports", true);
+  take(worldcup, "World Cup", true);
   take(tm, "Ticketmaster", ticketmasterEnabled());
   take(phq, "PredictHQ", predicthqEnabled());
 
@@ -76,7 +79,7 @@ export async function loadEvents(): Promise<SourceResult<CivicRecord[]>> {
       fetchedAt: nowIso(),
       note: `No live events available${skipped.length ? ` (inactive: ${skipped.join(", ")})` : ""}; showing demo events.`,
       data: DEMO_EVENTS,
-      attribution: "ESPN · Ticketmaster · PredictHQ",
+      attribution: "ESPN · World Cup · Ticketmaster · PredictHQ",
     };
   }
 
@@ -89,6 +92,6 @@ export async function loadEvents(): Promise<SourceResult<CivicRecord[]>> {
     fetchedAt: nowIso(),
     note: noteParts.join(" "),
     data: deduped,
-    attribution: "ESPN · Ticketmaster · PredictHQ",
+    attribution: "ESPN · World Cup · Ticketmaster · PredictHQ",
   };
 }
