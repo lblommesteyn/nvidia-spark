@@ -47,7 +47,11 @@ try {
 }
 
 const app = new Hono();
-app.use("/api/*", cors());
+// Allow the (separately-hosted) frontend to call this API cross-origin. Defaults
+// to "*" for the public demo; set CORS_ORIGIN=https://your-app.vercel.app to lock
+// it down. No credentials/cookies are used, so "*" is safe here.
+const corsOrigin = process.env.CORS_ORIGIN ?? "*";
+app.use("/api/*", cors({ origin: corsOrigin }));
 
 const TORONTO: GeoPoint = { lon: -79.3839, lat: 43.6535 };
 

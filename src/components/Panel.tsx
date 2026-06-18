@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import type { DataStatus } from "../types";
+import { apiUrl } from "../services/api";
 import { RelativeTime } from "./RelativeTime";
 
 interface Props {
@@ -40,7 +41,7 @@ export function Panel({ title, status, description, count, updatedAt, note, wide
           {dataHref ? (
             <a
               class={`badge badge-${status} badge-link`}
-              href={dataHref}
+              href={apiUrl(dataHref)}
               target="_blank"
               rel="noopener noreferrer"
               title="Open raw JSON feed in a new tab"

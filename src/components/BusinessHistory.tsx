@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { type Business } from "../services/api";
+import { apiUrl, type Business } from "../services/api";
 
 interface HistoryRow {
   date: string;
@@ -112,11 +112,11 @@ export function BusinessHistory({ business }: { business: Business }) {
   const schedFileRef = useRef<HTMLInputElement>(null);
 
   function load() {
-    fetch(`/api/businesses/${business.id}/history`)
+    fetch(apiUrl(`/api/businesses/${business.id}/history`))
       .then((r) => r.json())
       .then((d) => { setSummary(d.summary); setHistory(d.rows ?? []); })
       .catch(() => {});
-    fetch(`/api/businesses/${business.id}/schedule`)
+    fetch(apiUrl(`/api/businesses/${business.id}/schedule`))
       .then((r) => r.json())
       .then((d) => setUpcoming(d.upcoming ?? []))
       .catch(() => {});
@@ -134,7 +134,7 @@ export function BusinessHistory({ business }: { business: Business }) {
       const endpoint = type === "history"
         ? `/api/businesses/${business.id}/history`
         : `/api/businesses/${business.id}/schedule`;
-      const res = await fetch(endpoint, {
+      const res = await fetch(apiUrl(endpoint), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows }),
@@ -153,7 +153,7 @@ export function BusinessHistory({ business }: { business: Business }) {
     setUploading(true);
     setUploadMsg(null);
     try {
-      const res = await fetch(`/api/businesses/${business.id}/generate`, { method: "POST" });
+      const res = await fetch(apiUrl(`/api/businesses/${business.id}/generate`), { method: "POST" });
       const data = await res.json();
       setUploadMsg(`Generated ${data.historyRows} history rows + ${data.scheduleRows} schedule rows.`);
       load();

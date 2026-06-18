@@ -251,6 +251,7 @@ def train_model():
 
 if __name__ == "__main__":
     load_models()
-    port = int(os.environ.get("ML_PORT", "8788"))
+    # Honor PORT (Railway/Render/Heroku inject it) and fall back to ML_PORT/8788.
+    port = int(os.environ.get("PORT") or os.environ.get("ML_PORT") or "8788")
     log.info("CityFlow ML service starting on port %d", port)
     app.run(host="0.0.0.0", port=port, debug=False)

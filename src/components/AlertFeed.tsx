@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { apiUrl } from "../services/api";
 
 export interface ProactiveAlert {
   id: string;
@@ -41,13 +42,13 @@ export function AlertFeed() {
 
   useEffect(() => {
     // Load recent alerts from REST endpoint first.
-    fetch("/api/alerts")
+    fetch(apiUrl("/api/alerts"))
       .then((r) => r.json())
       .then((data: ProactiveAlert[]) => setAlerts(data))
       .catch(() => {});
 
     // Then subscribe to the SSE stream for live updates.
-    const es = new EventSource("/api/alerts/stream");
+    const es = new EventSource(apiUrl("/api/alerts/stream"));
     esRef.current = es;
 
     es.onopen = () => setConnected(true);

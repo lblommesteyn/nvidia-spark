@@ -302,10 +302,30 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export const api = {
-  health: () => fetch("/api/health").then(json<{ ok: boolean; provider: string }>),
+/**
+ * Base origin for the backend API. Empty by default → the frontend uses
+ * same-origin relative `/api/...` paths (dev via the Vite proxy, and the
+ * single-port production build served by Hono). When the frontend is hosted
+ * separately (e.g. on Vercel) and the backend lives elsewhere (e.g. Railway),
+ * set `VITE_API_BASE=https://<backend-host>` at build time and every call —
+ * including SSE and camera image URLs — is rewritten to that origin.
+ */
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
-  listBusinesses: () => fetch("/api/businesses").then(json<Business[]>),
+/** Resolve an app-relative `/api/...` path against the configured backend origin. */
+export function apiUrl(path: string): string {
+  return path.startsWith("/api") ? `${API_BASE}${path}` : path;
+}
+
+/** fetch() that targets the configured backend origin for `/api/...` paths. */
+function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(path), init);
+}
+
+export const api = {
+  health: () => apiFetch("/api/health").then(json<{ ok: boolean; provider: string }>),
+
+  listBusinesses: () => apiFetch("/api/businesses").then(json<Business[]>),
 
   createBusiness: (input: {
     name: string;
@@ -322,17 +342,17 @@ export const api = {
     maxStaffPerHour?: number;
     allowedShiftLengths?: number[];
   }) =>
-    fetch("/api/businesses", {
+    apiFetch("/api/businesses", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     }).then(json<Business>),
 
   transitNearby: (address: string) =>
-    fetch(`/api/transit/nearby?address=${encodeURIComponent(address)}`).then(json<TransitNearby>),
+    apiFetch(`/api/transit/nearby?address=${encodeURIComponent(address)}`).then(json<TransitNearby>),
 
   businessResearch: (businessId: string) =>
-    fetch(`/api/businesses/${businessId}/research`).then(
+    apiFetch(`/api/businesses/${businessId}/research`).then(
       json<{
         businessId: string;
         status: "pending" | "ready" | "error";
@@ -344,7 +364,7 @@ export const api = {
     ),
 
   refreshBusinessResearch: (businessId: string) =>
-    fetch(`/api/businesses/${businessId}/research`, { method: "POST" }).then(
+    apiFetch(`/api/businesses/${businessId}/research`, { method: "POST" }).then(
       json<{
         businessId: string;
         status: "pending" | "ready" | "error";
@@ -356,7 +376,7 @@ export const api = {
     ),
 
   deleteBusiness: (id: string) =>
-    fetch(`/api/businesses/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>),
+    apiFetch(`/api/businesses/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>),
 
   context: (params: { businessId?: string; lon?: number; lat?: number; radius?: number }) => {
     const q = new URLSearchParams();
@@ -364,7 +384,7 @@ export const api = {
     if (params.lon != null) q.set("lon", String(params.lon));
     if (params.lat != null) q.set("lat", String(params.lat));
     if (params.radius != null) q.set("radius", String(params.radius));
-    return fetch(`/api/context?${q.toString()}`).then(json<LocationContext>);
+    return apiFetch(`/api/context?${q.toString()}`).then(json<LocationContext>);
   },
 
   forecast: (params: { businessId?: string; lon?: number; lat?: number; radius?: number; type?: string }) => {
@@ -374,7 +394,7 @@ export const api = {
     if (params.lat != null) q.set("lat", String(params.lat));
     if (params.radius != null) q.set("radius", String(params.radius));
     if (params.type) q.set("type", params.type);
-    return fetch(`/api/forecast?${q.toString()}`).then(json<DemandForecast>);
+    return apiFetch(`/api/forecast?${q.toString()}`).then(json<DemandForecast>);
   },
 
   forecastWeek: (params: { businessId?: string; lon?: number; lat?: number; radius?: number; type?: string }) => {
@@ -384,28 +404,28 @@ export const api = {
     if (params.lat != null) q.set("lat", String(params.lat));
     if (params.radius != null) q.set("radius", String(params.radius));
     if (params.type) q.set("type", params.type);
-    return fetch(`/api/forecast/week?${q.toString()}`).then(json<WeeklyForecast>);
+    return apiFetch(`/api/forecast/week?${q.toString()}`).then(json<WeeklyForecast>);
   },
 
   mapRecords: () =>
-    fetch("/api/data/map").then(json<{ count: number; records: CivicRecord[] }>),
+    apiFetch("/api/data/map").then(json<{ count: number; records: CivicRecord[] }>),
 
-  liveChannels: () => fetch("/api/livetv").then(json<LiveChannelSummary[]>),
+  liveChannels: () => apiFetch("/api/livetv").then(json<LiveChannelSummary[]>),
 
-  liveChannel: (id: string) => fetch(`/api/livetv/${id}`).then(json<LiveResolution>),
+  liveChannel: (id: string) => apiFetch(`/api/livetv/${id}`).then(json<LiveResolution>),
 
-  mapGeo: () => fetch("/api/map/geo").then(json<GeoFeatureCollection>),
+  mapGeo: () => apiFetch("/api/map/geo").then(json<GeoFeatureCollection>),
 
-  flow: () => fetch("/api/flow").then(json<FlowCollection>),
+  flow: () => apiFetch("/api/flow").then(json<FlowCollection>),
 
-  traffic: () => fetch("/api/traffic").then(json<TrafficCollection>),
+  traffic: () => apiFetch("/api/traffic").then(json<TrafficCollection>),
 
-  transitRoutes: () => fetch("/api/transit/routes").then(json<RouteCollection>),
+  transitRoutes: () => apiFetch("/api/transit/routes").then(json<RouteCollection>),
 
-  goTrains: () => fetch("/api/transit/go").then(json<GoTrainCollection>),
+  goTrains: () => apiFetch("/api/transit/go").then(json<GoTrainCollection>),
 
   agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number }) =>
-    fetch("/api/agent", {
+    apiFetch("/api/agent", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -420,7 +440,7 @@ export const api = {
     body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean },
     onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; done?: boolean; error?: string }) => void,
   ): Promise<void> => {
-    const res = await fetch("/api/agent/stream", {
+    const res = await apiFetch("/api/agent/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -449,7 +469,7 @@ export const api = {
   },
 
   bizHistory: (businessId: string) =>
-    fetch(`/api/businesses/${businessId}/history`).then(json<{
+    apiFetch(`/api/businesses/${businessId}/history`).then(json<{
       summary: {
         totalDays: number;
         avgDailyRevenue: number | null;
@@ -461,30 +481,30 @@ export const api = {
     }>),
 
   bizSchedule: (businessId: string) =>
-    fetch(`/api/businesses/${businessId}/schedule`).then(json<{
+    apiFetch(`/api/businesses/${businessId}/schedule`).then(json<{
       upcoming: Array<{ date: string; hour: number; staff_count: number; role: string | null }>;
       recent:   Array<{ date: string; hour: number; staff_count: number; role: string | null }>;
     }>),
 
   bizGenerate: (businessId: string) =>
-    fetch(`/api/businesses/${businessId}/generate`, { method: "POST" }).then(json<{ historyRows: number; scheduleRows: number }>),
+    apiFetch(`/api/businesses/${businessId}/generate`, { method: "POST" }).then(json<{ historyRows: number; scheduleRows: number }>),
 
   bizUploadHistory: (businessId: string, rows: object[]) =>
-    fetch(`/api/businesses/${businessId}/history`, {
+    apiFetch(`/api/businesses/${businessId}/history`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ rows }),
     }).then(json<{ inserted: number }>),
 
   bizUploadSchedule: (businessId: string, rows: object[]) =>
-    fetch(`/api/businesses/${businessId}/schedule`, {
+    apiFetch(`/api/businesses/${businessId}/schedule`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ rows }),
     }).then(json<{ inserted: number }>),
 
   asrHealth: () =>
-    fetch("/api/asr/health").then(json<{
+    apiFetch("/api/asr/health").then(json<{
       available: boolean;
       loaded?: boolean;
       url?: string;
@@ -495,7 +515,7 @@ export const api = {
   asrTranscribe: async (audio: Blob, filename = "recording.webm") => {
     const form = new FormData();
     form.append("audio", audio, filename);
-    const res = await fetch("/api/asr/transcribe", { method: "POST", body: form });
+    const res = await apiFetch("/api/asr/transcribe", { method: "POST", body: form });
     if (!res.ok) {
       const err = await res.text().catch(() => "");
       throw new Error(err || `HTTP ${res.status}`);
@@ -504,9 +524,11 @@ export const api = {
   },
 
   nearestCamera: (lon: number, lat: number) =>
-    fetch(`/api/cameras/nearest?lon=${lon}&lat=${lat}&n=1`).then(
-      json<TrafficCamera[]>,
-    ),
+    apiFetch(`/api/cameras/nearest?lon=${lon}&lat=${lat}&n=1`)
+      .then(json<TrafficCamera[]>)
+      // The proxy image URL comes back app-relative; resolve it against the
+      // backend origin so it loads when the frontend is hosted separately.
+      .then((cams) => cams.map((c) => ({ ...c, imageUrl: apiUrl(c.imageUrl) }))),
 };
 
 export interface TrafficCamera {
