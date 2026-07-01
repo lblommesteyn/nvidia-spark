@@ -59,6 +59,14 @@ const SIGNAL_LABEL: Record<string, string> = {
 };
 
 /**
+ * Civic sources whose live data comes from paid, proprietary APIs (Ticketmaster
+ * / PredictHQ for events, aviationstack for flights). Flagged with a ★ so it
+ * reads as a premium feature of the app. Traffic (TomTom) is flagged in the map
+ * legend since it's a map layer, not a Data Sources row.
+ */
+const PREMIUM_SOURCES = new Set(["events", "flights"]);
+
+/**
  * Honest, branded label for the active intelligence stack. The CityFlow
  * gradient-boosting demand model is always part of the stack; the LLM half
  * varies by provider, so the local-GPU path proudly names Nemotron while the
@@ -441,6 +449,9 @@ export function App() {
               {context.civic.map((g) => (
                 <li key={g.source}>
                   <strong>{CATEGORY_LABEL[g.category]}</strong>
+                  {PREMIUM_SOURCES.has(g.source) && (
+                    <span class="premium-star" title="Premium data — powered by a paid, proprietary API">★</span>
+                  )}
                   {g.url ? (
                     <a class="src-link" href={g.url} target="_blank" rel="noopener noreferrer" title={g.attribution ?? g.label}>{g.label} ↗</a>
                   ) : (
@@ -569,6 +580,7 @@ export function App() {
           )}
           <button class="btn-ghost" title="Reset tile layout" onClick={() => resetDashboardLayout()}>⟲ Layout</button>
           <button class="btn-primary" onClick={() => setShowSetup(true)}>+ Business</button>
+          <button class="btn-ghost" title="Sign out of this session" onClick={async () => { await api.logout(); window.location.assign("/app"); }}>Sign out</button>
           <button class="btn-ghost" title="Close terminal" data-close-terminal onClick={() => {
             document.getElementById("terminal-app")?.setAttribute("aria-hidden", "true");
             document.body.classList.remove("terminal-open");

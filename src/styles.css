@@ -2403,6 +2403,220 @@ body.lp-visible #particle-canvas {
   background: var(--green);
 }
 
+/* Premium (paid-API) data layers — flagged with a gold star. */
+.map-legend-sep-premium {
+  color: #ffcc4d;
+}
+
+.map-legend-premium {
+  color: #ffe6a8;
+}
+
+.legend-star {
+  color: #ffcc4d;
+  font-size: 10px;
+  line-height: 1;
+  margin-left: 1px;
+}
+
+.map-legend-note {
+  color: #ffcc4d;
+  opacity: 0.85;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0.2px;
+}
+
+/* Premium badge next to paid data sources in the Data Sources tile. */
+.premium-star {
+  color: #ffcc4d;
+  margin-left: 4px;
+  font-size: 11px;
+  cursor: help;
+}
+
+/* ---- Onboarding / auth gate (shown before the terminal) ---- */
+.auth-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(68, 168, 255, 0.12), transparent 60%),
+    #070b12;
+  z-index: 30;
+  overflow-y: auto;
+}
+
+.auth-checking {
+  color: var(--text-dim);
+  font-size: 13px;
+  letter-spacing: 0.4px;
+}
+
+.auth-gate-card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--bg, #0b1017);
+  border: 1px solid var(--border, #1c2634);
+  border-radius: 14px;
+  padding: 26px 28px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.auth-gate-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.auth-gate-mark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #44a8ff, #7effc2);
+  color: #04101c;
+  font-weight: 800;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-gate-head h1 {
+  font-size: 19px;
+  margin: 0 0 4px;
+}
+
+.auth-gate-head p {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.auth-steps {
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 18px;
+}
+
+.auth-steps li {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--text-faint, #5b6b7f);
+  padding: 7px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #1c2634);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.auth-steps li.is-active {
+  color: #7effc2;
+  border-color: rgba(126, 255, 194, 0.4);
+  background: rgba(126, 255, 194, 0.08);
+}
+
+.auth-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.auth-step label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.auth-step input,
+.auth-step select {
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border, #1c2634);
+  border-radius: 8px;
+  color: var(--text, #e9eef5);
+  font-size: 13px;
+}
+
+.auth-hint-err {
+  color: #ff7b7b;
+  font-size: 11px;
+}
+
+.auth-transit {
+  margin-top: 2px;
+}
+
+.auth-review {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.auth-review div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--border, #1c2634);
+  padding-bottom: 6px;
+}
+
+.auth-terms {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border, #1c2634);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.auth-terms-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+}
+
+.auth-terms ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.auth-accept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text, #e9eef5);
+}
+
+.auth-accept input {
+  width: 15px;
+  height: 15px;
+}
+
+.auth-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
 /* Map overlay highlights (top-left briefing) */
 .map-overlay {
   position: absolute;

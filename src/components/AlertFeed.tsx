@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { apiUrl } from "../services/api";
+import { apiStreamUrl, apiUrl, getSessionToken } from "../services/api";
 
 export interface ProactiveAlert {
   id: string;
@@ -41,14 +41,16 @@ export function AlertFeed() {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    // Load recent alerts from REST endpoint first.
-    fetch(apiUrl("/api/alerts"))
+    const token = getSessionToken();
+    // Load recent alerts from REST endpoint first (session token in header).
+    fetch(apiUrl("/api/alerts"), token ? { headers: { "x-cityflow-session": token } } : undefined)
       .then((r) => r.json())
       .then((data: ProactiveAlert[]) => setAlerts(data))
       .catch(() => {});
 
-    // Then subscribe to the SSE stream for live updates.
-    const es = new EventSource(apiUrl("/api/alerts/stream"));
+    // Then subscribe to the SSE stream for live updates. EventSource can't set
+    // headers, so the token rides in the query string (?token=).
+    const es = new EventSource(apiStreamUrl("/api/alerts/stream"));
     esRef.current = es;
 
     es.onopen = () => setConnected(true);

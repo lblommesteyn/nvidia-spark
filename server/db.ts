@@ -444,6 +444,102 @@ export const businessResearch = {
   },
 };
 
+// ---- Auth sessions (public-hosting guardrail) ------------------------------
+// A session is minted after an operator completes the onboarding form. The
+// opaque token gates the API + terminal and is the key used for per-user rate
+// limiting. Persisted so sessions survive a server restart.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    token         TEXT PRIMARY KEY,
+    business_id   TEXT REFERENCES businesses(id) ON DELETE SET NULL,
+    operator_name TEXT NOT NULL,
+    operator_email TEXT NOT NULL,
+    company       TEXT,
+    created_at    TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(operator_email);
+`);
+
+interface SessionRow {
+  token: string;
+  business_id: string | null;
+  operator_name: string;
+  operator_email: string;
+  company: string | null;
+  created_at: string;
+  last_seen_at: string;
+}
+
+export interface SessionRecord {
+  token: string;
+  businessId: string | null;
+  operatorName: string;
+  operatorEmail: string;
+  company?: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+function toSession(r: SessionRow): SessionRecord {
+  return {
+    token: r.token,
+    businessId: r.business_id,
+    operatorName: r.operator_name,
+    operatorEmail: r.operator_email,
+    company: r.company ?? undefined,
+    createdAt: r.created_at,
+    lastSeenAt: r.last_seen_at,
+  };
+}
+
+export const sessions = {
+  create(input: {
+    token: string;
+    businessId: string | null;
+    operatorName: string;
+    operatorEmail: string;
+    company?: string;
+  }): SessionRecord {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO sessions (token, business_id, operator_name, operator_email, company, created_at, last_seen_at)
+       VALUES (@token, @business_id, @operator_name, @operator_email, @company, @created_at, @last_seen_at)`,
+    ).run({
+      token: input.token,
+      business_id: input.businessId,
+      operator_name: input.operatorName,
+      operator_email: input.operatorEmail,
+      company: input.company ?? null,
+      created_at: now,
+      last_seen_at: now,
+    });
+    return this.get(input.token)!;
+  },
+
+  get(token: string): SessionRecord | undefined {
+    const row = db.prepare("SELECT * FROM sessions WHERE token = ?").get(token) as SessionRow | undefined;
+    return row ? toSession(row) : undefined;
+  },
+
+  touch(token: string): void {
+    db.prepare("UPDATE sessions SET last_seen_at = ? WHERE token = ?").run(new Date().toISOString(), token);
+  },
+
+  /** Count sessions created by an email since a cutoff — abuse throttle. */
+  countByEmailSince(email: string, sinceIso: string): number {
+    return (
+      db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE operator_email = ? AND created_at >= ?").get(email, sinceIso) as {
+        n: number;
+      }
+    ).n;
+  },
+
+  remove(token: string): boolean {
+    return db.prepare("DELETE FROM sessions WHERE token = ?").run(token).changes > 0;
+  },
+};
+
 export const snapshots = {
   insert(row: SnapshotInsert): void {
     db.prepare(`

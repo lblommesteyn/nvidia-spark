@@ -2,8 +2,10 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { businesses, snapshots, businessHistory, businessSchedule, type BusinessInput } from "./db.ts";
+import { businesses, sessions, snapshots, businessHistory, businessSchedule, type BusinessInput, type SessionRecord } from "./db.ts";
 import { geocode } from "./geo.ts";
+import { clientIp, isValidEmail, newToken, sessionFromRequest, SESSION_HEADER } from "./auth.ts";
+import { acquireModelSlot, hit, LIMITS } from "./ratelimit.ts";
 import { CIVIC_SOURCES, getCivicSource, loadCivicSource, sourceUrl } from "./sources/civic.ts";
 import { getAirQuality, getWeather } from "./sources/environment.ts";
 import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
@@ -32,7 +34,7 @@ import {
   unregisterSseClient,
   sseClientCount,
 } from "./ai/alerts.ts";
-import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
+import { activeProvider, chat, chatStream, describeChain, resolveProvider } from "./ai/provider.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
 import { parakeetHealth, parakeetTranscribe, PARAKEET_BASE } from "./ai/parakeet.ts";
 import { nearestCameras, cameraImageUrl } from "./sources/cameras.ts";
@@ -47,12 +49,67 @@ try {
   // no .env present; sources fall back to keyless/demo modes
 }
 
-const app = new Hono();
+// Session is attached to the request context by the guardrail middleware so
+// downstream handlers can read the authenticated operator/business.
+type AppEnv = { Variables: { session: SessionRecord | null } };
+const app = new Hono<AppEnv>();
 // Allow the (separately-hosted) frontend to call this API cross-origin. Defaults
 // to "*" for the public demo; set CORS_ORIGIN=https://your-app.vercel.app to lock
-// it down. No credentials/cookies are used, so "*" is safe here.
+// it down. No credentials/cookies are used, so "*" is safe here. The custom
+// session header must be allow-listed so browsers send it cross-origin.
 const corsOrigin = process.env.CORS_ORIGIN ?? "*";
-app.use("/api/*", cors({ origin: corsOrigin }));
+app.use("/api/*", cors({
+  origin: corsOrigin,
+  allowHeaders: ["Content-Type", "Authorization", SESSION_HEADER],
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+}));
+
+// ---- Guardrails: per-IP rate limit + session gate on protected endpoints ----
+// Public endpoints don't need a session (health, onboarding, AI manifest); every
+// other /api route requires a valid session token so a public deployment can't
+// be scraped or used to hammer the model anonymously.
+const PUBLIC_API = new Set(["/api/health", "/api/manifest"]);
+function isPublicApiPath(path: string): boolean {
+  return PUBLIC_API.has(path) || path.startsWith("/api/auth/");
+}
+
+app.use("/api/*", async (c, next) => {
+  if (c.req.method === "OPTIONS") return next();
+  const path = new URL(c.req.url).pathname;
+  const ip = clientIp(c);
+
+  // 1. Coarse per-IP rate limit across the whole API.
+  const ipLimit = hit(`ip:${ip}`, LIMITS.ipPerMin(), 60_000);
+  if (!ipLimit.allowed) {
+    return c.json({ error: "rate_limited", scope: "ip", retryAfter: ipLimit.retryAfter }, 429, {
+      "Retry-After": String(ipLimit.retryAfter),
+    });
+  }
+
+  // 2. Public endpoints skip the session requirement.
+  if (isPublicApiPath(path)) {
+    c.set("session", null);
+    return next();
+  }
+
+  // 3. Everything else requires a valid session token.
+  const session = sessionFromRequest(c);
+  if (!session) {
+    return c.json({ error: "unauthorized", message: "Complete onboarding to use CityFlow." }, 401);
+  }
+  c.set("session", session);
+
+  // 4. Expensive model endpoints get a tighter per-session budget.
+  if (path === "/api/agent" || path === "/api/agent/stream") {
+    const agentLimit = hit(`agent:${session.token}`, LIMITS.agentPerMin(), 60_000);
+    if (!agentLimit.allowed) {
+      return c.json({ error: "rate_limited", scope: "agent", retryAfter: agentLimit.retryAfter }, 429, {
+        "Retry-After": String(agentLimit.retryAfter),
+      });
+    }
+  }
+  return next();
+});
 
 const TORONTO: GeoPoint = { lon: -79.3839, lat: 43.6535 };
 
@@ -66,6 +123,7 @@ app.get("/api/health", (c) =>
   c.json({
     ok: true,
     provider: activeProvider(),
+    llm: describeChain(),
     sources: CIVIC_SOURCES.map((s) => s.key),
     sseClients: sseClientCount(),
     patternRows: snapshots.count(),
@@ -80,6 +138,128 @@ app.get("/api/health", (c) =>
 // ---- AI-friendly manifest (tools + endpoints) ----
 app.get("/api/manifest", (c) => c.json(aiManifest()));
 app.get("/.well-known/ai-plugin.json", (c) => c.json(aiManifest()));
+
+// ---- Auth / onboarding (public deployment guardrail) ----
+/**
+ * Create (or geocode → persist) a business from a request body. Shared by the
+ * onboarding flow and the in-app "+ Business" action. Throws an Error whose
+ * `.status` carries the HTTP code for the caller to surface.
+ */
+async function createBusinessFromInput(body: Record<string, unknown>): Promise<ReturnType<typeof businesses.create>> {
+  if (!body?.name || !body?.businessType || !body?.address) {
+    const err = new Error("name, businessType and address are required") as Error & { status?: number };
+    err.status = 400;
+    throw err;
+  }
+  let lon = Number(body.lon);
+  let lat = Number(body.lat);
+  let neighbourhood = body.neighbourhood as string | undefined;
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    const geo = await geocode(String(body.address));
+    if (!geo) {
+      const err = new Error("could not geocode address within Toronto") as Error & { status?: number };
+      err.status = 422;
+      throw err;
+    }
+    lon = geo.lon;
+    lat = geo.lat;
+    neighbourhood = neighbourhood ?? geo.neighbourhood;
+  }
+  const transit = transitContext({ lon, lat });
+  const input: BusinessInput = {
+    name: String(body.name),
+    businessType: String(body.businessType),
+    address: String(body.address),
+    lon,
+    lat,
+    ward: body.ward as string | undefined,
+    neighbourhood,
+    headcount: Number(body.headcount) || 1,
+    notes: body.notes as string | undefined,
+    opensAt: clampHour(body.opensAt),
+    closesAt: clampHour(body.closesAt),
+    eventRadiusKm: posNum(body.eventRadiusKm),
+    customersPerWorkerHour: posNum(body.customersPerWorkerHour),
+    hourlyWage: posNum(body.hourlyWage),
+    minStaff: posInt(body.minStaff),
+    maxStaffPerHour: posInt(body.maxStaffPerHour),
+    allowedShiftLengths: cleanShiftLengths(body.allowedShiftLengths),
+    transitRelevance: transit.relevance,
+    nearbyRoutes: transit.routes.map((r) => r.name),
+  };
+  const created = businesses.create(input);
+  enqueueBusinessResearch(created);
+  return created;
+}
+
+/**
+ * Onboarding: the multi-step form posts operator identity + business details +
+ * acceptance of the acceptable-use terms. We validate, throttle by IP and email,
+ * create the business, and mint a session token that gates the rest of the API.
+ */
+app.post("/api/auth/register", async (c) => {
+  const ip = clientIp(c);
+  const reg = hit(`register:${ip}`, LIMITS.registerPerHour(), 3_600_000);
+  if (!reg.allowed) {
+    return c.json({ error: "rate_limited", scope: "register", retryAfter: reg.retryAfter }, 429, {
+      "Retry-After": String(reg.retryAfter),
+    });
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const operatorName = typeof body?.operatorName === "string" ? body.operatorName.trim() : "";
+  const operatorEmail = typeof body?.operatorEmail === "string" ? body.operatorEmail.trim().toLowerCase() : "";
+  const acceptedTerms = body?.acceptedTerms === true;
+  const business = body?.business as Record<string, unknown> | undefined;
+
+  if (!operatorName || operatorName.length > 120) return c.json({ error: "operator name is required" }, 400);
+  if (!isValidEmail(operatorEmail)) return c.json({ error: "a valid email is required" }, 400);
+  if (!acceptedTerms) return c.json({ error: "you must accept the acceptable-use terms" }, 400);
+  if (!business) return c.json({ error: "business details are required" }, 400);
+
+  // Throttle repeat signups from the same email (abuse guard).
+  const sinceHour = new Date(Date.now() - 3_600_000).toISOString();
+  if (sessions.countByEmailSince(operatorEmail, sinceHour) >= 5) {
+    return c.json({ error: "rate_limited", scope: "email", retryAfter: 3600 }, 429, { "Retry-After": "3600" });
+  }
+
+  let created;
+  try {
+    created = await createBusinessFromInput(business);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    return c.json({ error: err instanceof Error ? err.message : "could not create business" }, status as 400);
+  }
+
+  const token = newToken();
+  sessions.create({
+    token,
+    businessId: created.id,
+    operatorName,
+    operatorEmail,
+    company: (business.name as string) ?? undefined,
+  });
+  return c.json({ token, business: created, operator: { name: operatorName, email: operatorEmail } }, 201);
+});
+
+/** Validate an existing token (used on app load to resume a session). */
+app.get("/api/auth/session", (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  const business = session.businessId ? businesses.get(session.businessId) ?? null : null;
+  return c.json({
+    operator: { name: session.operatorName, email: session.operatorEmail },
+    business,
+    createdAt: session.createdAt,
+  });
+});
+
+/** Sign out — invalidate the token. */
+app.post("/api/auth/logout", (c) => {
+  const session = sessionFromRequest(c);
+  if (session) sessions.remove(session.token);
+  return c.json({ ok: true });
+});
 
 // ---- Geocoding ----
 app.get("/api/geocode", async (c) => {
@@ -298,49 +478,13 @@ app.get("/api/businesses/:id", (c) => {
 
 app.post("/api/businesses", async (c) => {
   const body = await c.req.json().catch(() => null);
-  if (!body?.name || !body?.businessType || !body?.address) {
-    return c.json({ error: "name, businessType and address are required" }, 400);
+  try {
+    const created = await createBusinessFromInput(body ?? {});
+    return c.json(created, 201);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    return c.json({ error: err instanceof Error ? err.message : "could not create business" }, status as 400);
   }
-  // Geocode the address unless explicit coords are supplied.
-  let lon = Number(body.lon);
-  let lat = Number(body.lat);
-  let neighbourhood = body.neighbourhood as string | undefined;
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-    const geo = await geocode(body.address);
-    if (!geo) return c.json({ error: "could not geocode address within Toronto" }, 422);
-    lon = geo.lon;
-    lat = geo.lat;
-    neighbourhood = neighbourhood ?? geo.neighbourhood;
-  }
-
-  // Always derive transit context server-side from the final coords so the
-  // stored values are authoritative (not trusted from the client preview).
-  const transit = transitContext({ lon, lat });
-
-  const input: BusinessInput = {
-    name: body.name,
-    businessType: body.businessType,
-    address: body.address,
-    lon,
-    lat,
-    ward: body.ward,
-    neighbourhood,
-    headcount: Number(body.headcount) || 1,
-    notes: body.notes,
-    opensAt: clampHour(body.opensAt),
-    closesAt: clampHour(body.closesAt),
-    eventRadiusKm: posNum(body.eventRadiusKm),
-    customersPerWorkerHour: posNum(body.customersPerWorkerHour),
-    hourlyWage: posNum(body.hourlyWage),
-    minStaff: posInt(body.minStaff),
-    maxStaffPerHour: posInt(body.maxStaffPerHour),
-    allowedShiftLengths: cleanShiftLengths(body.allowedShiftLengths),
-    transitRelevance: transit.relevance,
-    nearbyRoutes: transit.routes.map((r) => r.name),
-  };
-  const created = businesses.create(input);
-  enqueueBusinessResearch(created);
-  return c.json(created, 201);
 });
 
 app.get("/api/businesses/:id/research", (c) => {
@@ -546,7 +690,17 @@ app.post("/api/ml/train", async (c) => {
 app.post("/api/agent", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body?.question) return c.json({ error: "question required" }, 400);
+  if (typeof body.question === "string" && body.question.length > 2000) {
+    return c.json({ error: "question too long (max 2000 chars)" }, 400);
+  }
   const radiusM = Number(body.radiusM) || 750;
+  // Global concurrency cap so a burst of users can't overload the model host.
+  const release = acquireModelSlot();
+  if (!release) {
+    return c.json({ error: "model_busy", message: "The model is at capacity — try again shortly." }, 503, {
+      "Retry-After": "5",
+    });
+  }
   try {
     if (body.businessId) {
       return c.json(await askForBusiness(body.businessId, body.question, radiusM));
@@ -559,6 +713,8 @@ app.post("/api/agent", async (c) => {
     return c.json(await askForPoint(lon, lat, body.question, { radiusM, businessType: body.businessType }));
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "agent error" }, 500);
+  } finally {
+    release();
   }
 });
 
@@ -568,9 +724,20 @@ app.post("/api/agent", async (c) => {
 app.post("/api/agent/stream", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body?.question) return c.json({ error: "question required" }, 400);
+  if (typeof body.question === "string" && body.question.length > 2000) {
+    return c.json({ error: "question too long (max 2000 chars)" }, 400);
+  }
   if (!body.businessId) return c.json({ error: "businessId required for streaming" }, 400);
   const radiusM = Number(body.radiusM) || 750;
   const useGradient = body.useGradient !== false;
+
+  // Global concurrency cap so a burst of users can't overload the model host.
+  const release = acquireModelSlot();
+  if (!release) {
+    return c.json({ error: "model_busy", message: "The model is at capacity — try again shortly." }, 503, {
+      "Retry-After": "5",
+    });
+  }
 
   const stream = new ReadableStream<string>({
     async start(controller) {
@@ -589,11 +756,12 @@ app.post("/api/agent/stream", async (c) => {
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
         try { controller.close(); } catch { /* already closed */ }
+        release();
         return;
       }
 
-      const { provider, model } = describeProvider();
-      send({ meta: true, provider, model, gradientUsed: req.gradientUsed, contextUsed: req.contextUsed });
+      const { provider, model, fallbacks } = await resolveProvider();
+      send({ meta: true, provider, model, fallbacks, gradientUsed: req.gradientUsed, contextUsed: req.contextUsed });
 
       // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
       // delta shape we don't recognise, or output that was entirely a stripped
@@ -626,6 +794,7 @@ app.post("/api/agent/stream", async (c) => {
 
       send({ done: true });
       try { controller.close(); } catch { /* already closed */ }
+      release();
     },
   });
 
