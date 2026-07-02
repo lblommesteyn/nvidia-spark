@@ -1,5 +1,5 @@
 import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
-import { chat, type ChatMessage, type ChatOptions, type ChatResult } from "./provider.ts";
+import { chat, type ChatMessage, type ChatOptions, type ChatResult, type PreferredProvider } from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businessHistoryBlock } from "./bizdata.ts";
 import { weekForecastForBusiness } from "./forecast.ts";
@@ -23,6 +23,8 @@ export interface AgentRequest {
   gradientUsed: boolean;
   contextUsed: AgentAnswer["contextUsed"];
 }
+
+export type AgentMode = "nemotron-ml" | "claude";
 
 function weekForecastBlock(businessId: string, week: Awaited<ReturnType<typeof weekForecastForBusiness>>): string {
   const dayLines = week.days
@@ -85,6 +87,7 @@ function systemPrompt(
     "    Explicitly flag over-staffing: 'Tuesday afternoon is historically slow — you may be over-scheduled.'",
     "  - When the owner asks about revenue or customers, use their actual numbers, not generic estimates.",
     "If data is marked [demo], note it may be placeholder. Cite distances when relevant.",
+    "Format the answer so it is easy to skim: a short headline, then concise bullets, then an action or recommendation line.",
     "",
     nowBlock,
     profileBlock,
@@ -136,7 +139,7 @@ export async function buildBusinessAgentRequest(
   businessId: string,
   question: string,
   radiusM = 750,
-  opts: { useGradient?: boolean } = {},
+  opts: { useGradient?: boolean; preferredProvider?: PreferredProvider } = {},
 ): Promise<AgentRequest> {
   const useGradient = opts.useGradient ?? true;
   const business = businesses.get(businessId);
@@ -181,9 +184,10 @@ export async function askForBusiness(
   businessId: string,
   question: string,
   radiusM = 750,
+  opts: { useGradient?: boolean; preferredProvider?: PreferredProvider } = {},
 ): Promise<AgentAnswer> {
-  const { messages, opts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM);
-  const result = await chat(messages, opts);
+  const { messages, opts: chatOpts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM, opts);
+  const result = await chat(messages, chatOpts, opts.preferredProvider);
   return { ...result, contextUsed };
 }
 

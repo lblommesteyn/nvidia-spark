@@ -2728,6 +2728,19 @@ body.lp-visible #particle-canvas {
   border: 1px solid rgba(54, 211, 153, 0.4);
   text-transform: capitalize;
 }
+
+.agent-mode-wrap {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+
+.agent-mode-select {
+  min-width: 160px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 .model-toggle {
   display: inline-flex;
   padding: 2px;

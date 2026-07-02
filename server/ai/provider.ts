@@ -20,6 +20,7 @@
 import { fetchJson } from "../cache.ts";
 
 type Provider = "nemotron" | "openai" | "anthropic" | "ollama" | "mock";
+export type PreferredProvider = Exclude<Provider, "mock">;
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -49,7 +50,7 @@ export interface ChatOptions {
  * in "mock". When LLM_FALLBACK=off, only the single preferred provider (plus the
  * mock safety net) is returned so there's no cloud failover.
  */
-export function providerChain(): Provider[] {
+export function providerChain(preferred?: PreferredProvider): Provider[] {
   const chain: Provider[] = [];
   if (process.env.NEMOTRON_BASE_URL) chain.push("nemotron");
   if (process.env.OPENAI_API_KEY) chain.push("openai");
@@ -58,6 +59,9 @@ export function providerChain(): Provider[] {
 
   const fallbackDisabled = /^(off|false|0|no)$/i.test(process.env.LLM_FALLBACK ?? "");
   const configured = fallbackDisabled ? chain.slice(0, 1) : chain;
+  if (preferred && configured.includes(preferred)) {
+    return [preferred, ...configured.filter((provider) => provider !== preferred), "mock"];
+  }
   return [...configured, "mock"];
 }
 
@@ -86,8 +90,12 @@ function callOnce(provider: Provider, messages: ChatMessage[], opts: ChatOptions
   }
 }
 
-export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
-  const chain = providerChain();
+export async function chat(
+  messages: ChatMessage[],
+  opts: ChatOptions = {},
+  preferred?: PreferredProvider,
+): Promise<ChatResult> {
+  const chain = providerChain(preferred);
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
     if (provider === "mock") return mock(messages);
@@ -156,8 +164,8 @@ async function probeNemotron(): Promise<boolean> {
  * remote Nemotron endpoint so streaming metadata reflects reality (DGX vs the
  * cloud fallback) instead of optimistically claiming Nemotron when it's down.
  */
-export async function resolveProvider(): Promise<{ provider: string; model: string; fallbacks: string[] }> {
-  const chain = providerChain();
+export async function resolveProvider(preferred?: PreferredProvider): Promise<{ provider: string; model: string; fallbacks: string[] }> {
+  const chain = providerChain(preferred);
   for (const provider of chain) {
     if (provider === "nemotron") {
       if (await probeNemotron()) return { provider, model: modelFor(provider), fallbacks: chain.slice(1) };
@@ -207,8 +215,12 @@ async function* streamOne(provider: Provider, messages: ChatMessage[], opts: Cha
   }
 }
 
-export async function* chatStream(messages: ChatMessage[], opts: ChatOptions = {}): AsyncGenerator<string> {
-  const chain = providerChain();
+export async function* chatStream(
+  messages: ChatMessage[],
+  opts: ChatOptions = {},
+  preferred?: PreferredProvider,
+): AsyncGenerator<string> {
+  const chain = providerChain(preferred);
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
     if (provider === "mock") {

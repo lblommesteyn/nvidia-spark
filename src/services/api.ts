@@ -123,6 +123,8 @@ export interface AgentAnswer {
   contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
 }
 
+export type AgentMode = "nemotron-ml" | "claude";
+
 export type DemandLevel = "low" | "moderate" | "elevated" | "surge";
 
 export interface ForecastDriver {
@@ -524,7 +526,7 @@ export const api = {
       json<{ status: string; note: string; data: Holiday[] }>,
     ),
 
-  agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number }) =>
+  agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number; providerMode?: AgentMode }) =>
     apiFetch("/api/agent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -537,8 +539,8 @@ export const api = {
    * Resolves when the stream closes.
    */
   agentStream: async (
-    body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean },
-    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; done?: boolean; error?: string }) => void,
+    body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean; providerMode?: AgentMode },
+    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; mode?: AgentMode; done?: boolean; error?: string }) => void,
   ): Promise<void> => {
     const res = await apiFetch("/api/agent/stream", {
       method: "POST",

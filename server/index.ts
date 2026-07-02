@@ -734,7 +734,10 @@ app.post("/api/agent", async (c) => {
     if (body.businessId) {
       const b = getOwnedBusiness(c, String(body.businessId));
       if (!b) return c.json({ error: "business not found" }, 404);
-      return c.json(await askForBusiness(b.id, body.question, radiusM));
+      return c.json(await askForBusiness(b.id, body.question, radiusM, {
+        useGradient: body.providerMode !== "claude",
+        preferredProvider: body.providerMode === "claude" ? "anthropic" : "nemotron",
+      }));
     }
     const lon = Number(body.lon);
     const lat = Number(body.lat);
@@ -762,7 +765,9 @@ app.post("/api/agent/stream", async (c) => {
   const b = getOwnedBusiness(c, String(body.businessId));
   if (!b) return c.json({ error: "business not found" }, 404);
   const radiusM = Number(body.radiusM) || 750;
-  const useGradient = body.useGradient !== false;
+  const agentMode = body.providerMode === "claude" ? "claude" : "nemotron-ml";
+  const useGradient = agentMode === "nemotron-ml" ? body.useGradient !== false : false;
+  const preferredProvider = agentMode === "claude" ? "anthropic" : "nemotron";
 
   // Global concurrency cap so a burst of users can't overload the model host.
   const release = acquireModelSlot();
@@ -785,7 +790,7 @@ app.post("/api/agent/stream", async (c) => {
       // Build the prompt/context once (may throw → report and close).
       let req;
       try {
-        req = await buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient });
+        req = await buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient, preferredProvider });
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
         try { controller.close(); } catch { /* already closed */ }
@@ -793,8 +798,16 @@ app.post("/api/agent/stream", async (c) => {
         return;
       }
 
-      const { provider, model, fallbacks } = await resolveProvider();
-      send({ meta: true, provider, model, fallbacks, gradientUsed: req.gradientUsed, contextUsed: req.contextUsed });
+      const { provider, model, fallbacks } = await resolveProvider(preferredProvider);
+      send({
+        meta: true,
+        provider,
+        model,
+        fallbacks,
+        gradientUsed: req.gradientUsed,
+        mode: agentMode,
+        contextUsed: req.contextUsed,
+      });
 
       // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
       // delta shape we don't recognise, or output that was entirely a stripped
@@ -803,7 +816,7 @@ app.post("/api/agent/stream", async (c) => {
       let emitted = 0;
       let streamErr: unknown = null;
       try {
-        for await (const delta of chatStream(req.messages, req.opts)) {
+        for await (const delta of chatStream(req.messages, req.opts, preferredProvider)) {
           if (delta) {
             emitted += delta.length;
             send({ delta });
@@ -816,7 +829,7 @@ app.post("/api/agent/stream", async (c) => {
 
       if (emitted === 0) {
         try {
-          const result = await chat(req.messages, req.opts);
+          const result = await chat(req.messages, req.opts, preferredProvider);
           console.log(`[agent/stream] fallback chat() chars=${result.text.length} preview=${JSON.stringify(result.text.slice(0, 120))}`);
           send({ delta: result.text || "(No response from the model.)" });
         } catch (err) {
