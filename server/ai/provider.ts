@@ -50,7 +50,7 @@ export interface ChatOptions {
  * in "mock". When LLM_FALLBACK=off, only the single preferred provider (plus the
  * mock safety net) is returned so there's no cloud failover.
  */
-export function providerChain(preferred?: PreferredProvider): Provider[] {
+export function providerChain(preferred?: PreferredProvider, allowMockFallback = true): Provider[] {
   const chain: Provider[] = [];
   if (process.env.NEMOTRON_BASE_URL) chain.push("nemotron");
   if (process.env.OPENAI_API_KEY) chain.push("openai");
@@ -60,9 +60,11 @@ export function providerChain(preferred?: PreferredProvider): Provider[] {
   const fallbackDisabled = /^(off|false|0|no)$/i.test(process.env.LLM_FALLBACK ?? "");
   const configured = fallbackDisabled ? chain.slice(0, 1) : chain;
   if (preferred && configured.includes(preferred)) {
-    return [preferred, ...configured.filter((provider) => provider !== preferred), "mock"];
+    return allowMockFallback
+      ? [preferred, ...configured.filter((provider) => provider !== preferred), "mock"]
+      : [preferred];
   }
-  return [...configured, "mock"];
+  return allowMockFallback ? [...configured, "mock"] : configured;
 }
 
 /** The preferred (first, highest-priority) provider. */
@@ -94,8 +96,9 @@ export async function chat(
   messages: ChatMessage[],
   opts: ChatOptions = {},
   preferred?: PreferredProvider,
+  allowMockFallback = true,
 ): Promise<ChatResult> {
-  const chain = providerChain(preferred);
+  const chain = providerChain(preferred, allowMockFallback);
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
     if (provider === "mock") return mock(messages);
@@ -104,9 +107,14 @@ export async function chat(
       if (result.text?.trim()) return result;
       // Empty output → treat as a soft failure and fall through to the next.
       console.warn(`[provider] ${provider} returned empty text — falling back`);
+      if (!allowMockFallback && preferred) throw new Error(`${provider} returned empty text`);
     } catch (err) {
       console.warn(`[provider] ${provider} failed (${err instanceof Error ? err.message : err}) — falling back`);
+      if (!allowMockFallback && preferred) throw err;
     }
+  }
+  if (!allowMockFallback && preferred) {
+    throw new Error(`${preferred} unavailable`);
   }
   return mock(messages);
 }
@@ -219,8 +227,9 @@ export async function* chatStream(
   messages: ChatMessage[],
   opts: ChatOptions = {},
   preferred?: PreferredProvider,
+  allowMockFallback = true,
 ): AsyncGenerator<string> {
-  const chain = providerChain(preferred);
+  const chain = providerChain(preferred, allowMockFallback);
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
     if (provider === "mock") {
@@ -239,12 +248,19 @@ export async function* chatStream(
       // If we already streamed some tokens we can't cleanly restart on another
       // provider (would duplicate), so stop here. Otherwise fall through.
       if (emitted > 0) return;
+      if (!allowMockFallback && preferred) throw err;
       console.warn(`[provider] ${provider} stream failed (${err instanceof Error ? err.message : err}) — falling back`);
       continue;
     }
     if (emitted > 0) return;
     // Provider produced nothing (e.g. all <think>) → try the next in the chain.
     console.warn(`[provider] ${provider} stream produced no visible output — falling back`);
+    if (!allowMockFallback && preferred) {
+      throw new Error(`${provider} produced no visible output`);
+    }
+  }
+  if (!allowMockFallback && preferred) {
+    throw new Error(`${preferred} unavailable`);
   }
   yield* mockStream(messages);
 }
@@ -468,11 +484,11 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
   const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const res = await fetchJson<{ choices: { message: { content: string } }[] }>(
+  const res = await fetchJson<{ choices: { message: { content?: string; reasoning?: string } }[] }>(
     `${base}/chat/completions`,
     {
       method: "POST",
-      timeoutMs: 25_000,
+      timeoutMs: 120_000,
       headers,
       body: JSON.stringify({
         model,
@@ -483,8 +499,11 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
     },
   );
   const raw = res.choices[0]?.message?.content ?? "";
+  const reasoning = res.choices[0]?.message?.reasoning ?? "";
   const text = stripThink(raw);
-  return { text: text || raw.trim(), provider: "nemotron", model };
+  if (text.trim()) return { text, provider: "nemotron", model };
+  if (reasoning.trim()) return { text: reasoning.trim(), provider: "nemotron", model };
+  throw new Error("Nemotron returned no visible answer");
 }
 
 /**
@@ -506,7 +525,7 @@ async function openai(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
     "https://api.openai.com/v1/chat/completions",
     {
       method: "POST",
-      timeoutMs: 60_000,
+      timeoutMs: 120_000,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -514,18 +533,20 @@ async function openai(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
       body: JSON.stringify({ model, messages, temperature: opts.temperature ?? 0.3, max_tokens: opts.maxTokens }),
     },
   );
-  return { text: res.choices[0]?.message?.content ?? "", provider: "openai", model };
+  const text = res.choices[0]?.message?.content ?? "";
+  if (!text.trim()) throw new Error("OpenAI returned no visible answer");
+  return { text, provider: "openai", model };
 }
 
 async function anthropic(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
   const model = process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest";
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
   const rest = messages.filter((m) => m.role !== "system");
-  const res = await fetchJson<{ content: { text: string }[] }>(
+  const res = await fetchJson<{ content: Array<{ type?: string; text?: string }> }>(
     "https://api.anthropic.com/v1/messages",
     {
       method: "POST",
-      timeoutMs: 60_000,
+      timeoutMs: 120_000,
       headers: {
         "Content-Type": "application/json",
         "x-api-key": process.env.ANTHROPIC_API_KEY!,
@@ -534,7 +555,9 @@ async function anthropic(messages: ChatMessage[], opts: ChatOptions): Promise<Ch
       body: JSON.stringify({ model, max_tokens: opts.maxTokens ?? 1024, system, messages: rest }),
     },
   );
-  return { text: res.content[0]?.text ?? "", provider: "anthropic", model };
+  const text = res.content.map((block) => block.text ?? "").join("\n").trim();
+  if (!text.trim()) throw new Error("Claude returned no visible answer");
+  return { text, provider: "anthropic", model };
 }
 
 async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
@@ -547,13 +570,14 @@ async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
     `${host}/api/chat`,
     {
       method: "POST",
-      timeoutMs: 25_000,
+      timeoutMs: 120_000,
       body: JSON.stringify({ model, messages: msgs, stream: false, options }),
     },
   );
   const raw = res.message?.content ?? "";
   const text = stripThink(raw);
-  return { text: text || raw.trim(), provider: "ollama", model };
+  if (!text.trim()) throw new Error("Ollama returned no visible answer");
+  return { text, provider: "ollama", model };
 }
 
 /**

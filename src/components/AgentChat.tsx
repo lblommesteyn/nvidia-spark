@@ -106,6 +106,7 @@ export function AgentChat({ business }: { business: Business }) {
   const [manageOpen, setManageOpen]       = useState(false);
   const [genBusy, setGenBusy]       = useState(false);
   const [genMsg, setGenMsg]         = useState<string | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<AgentMode>("nemotron-ml");
   const scrollRef    = useRef<HTMLDivElement>(null);
   const histRef      = useRef<HTMLInputElement>(null);
@@ -235,6 +236,7 @@ export function AgentChat({ business }: { business: Business }) {
 
   async function ask(question: string) {
     if (!question.trim() || busy) return;
+    setAgentError(null);
     setInput("");
     streamBuf.current = "";
     setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
@@ -256,6 +258,7 @@ export function AgentChat({ business }: { business: Business }) {
         providerMode: agentMode,
       }, (e) => {
         if (e.error) {
+          setAgentError(e.error);
           setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
           return;
         }
@@ -271,7 +274,9 @@ export function AgentChat({ business }: { business: Business }) {
         }
       });
     } catch (err) {
-      setStreamingMsg({ text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false });
+      const msg = err instanceof Error ? err.message : "failed";
+      setAgentError(msg);
+      setStreamingMsg({ text: `Error: ${msg}`, streaming: false });
     } finally {
       // Capture ref value BEFORE clearing — the functional updater runs async,
       // so reading streamBuf.current inside the closure would see the cleared value.
@@ -388,6 +393,12 @@ export function AgentChat({ business }: { business: Business }) {
           </div>
         )}
       </div>
+
+      {agentError && (
+        <div class="agent-error-banner" role="alert">
+          {agentError}
+        </div>
+      )}
 
       {/* ---- Expanded heatmap ---- */}
       {dataExpanded && hasData && (

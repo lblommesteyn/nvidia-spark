@@ -799,6 +799,12 @@ app.post("/api/agent/stream", async (c) => {
       }
 
       const { provider, model, fallbacks } = await resolveProvider(preferredProvider);
+      if (provider !== preferredProvider) {
+        send({ error: `${agentMode === "claude" ? "Claude" : "Nemotron"} unavailable` });
+        try { controller.close(); } catch { /* already closed */ }
+        release();
+        return;
+      }
       send({
         meta: true,
         provider,
@@ -809,33 +815,15 @@ app.post("/api/agent/stream", async (c) => {
         contextUsed: req.contextUsed,
       });
 
-      // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
-      // delta shape we don't recognise, or output that was entirely a stripped
-      // <think> trace) or throws mid-stream, fall back to a single non-streaming
-      // call so the answer ALWAYS comes through.
-      let emitted = 0;
-      let streamErr: unknown = null;
       try {
-        for await (const delta of chatStream(req.messages, req.opts, preferredProvider)) {
-          if (delta) {
-            emitted += delta.length;
-            send({ delta });
-          }
+        const result = await chat(req.messages, req.opts, preferredProvider, false);
+        if (result.provider === "mock" || result.provider !== preferredProvider) {
+          throw new Error(`${agentMode === "claude" ? "Claude" : "Nemotron"} unavailable`);
         }
+        console.log(`[agent/stream] provider=${provider} model=${model} chars=${result.text.length}`);
+        send({ delta: result.text });
       } catch (err) {
-        streamErr = err;
-      }
-      console.log(`[agent/stream] provider=${provider} model=${model} streamedChars=${emitted}${streamErr ? ` streamErr=${streamErr instanceof Error ? streamErr.message : String(streamErr)}` : ""}`);
-
-      if (emitted === 0) {
-        try {
-          const result = await chat(req.messages, req.opts, preferredProvider);
-          console.log(`[agent/stream] fallback chat() chars=${result.text.length} preview=${JSON.stringify(result.text.slice(0, 120))}`);
-          send({ delta: result.text || "(No response from the model.)" });
-        } catch (err) {
-          console.error(`[agent/stream] fallback chat() failed: ${err instanceof Error ? err.message : String(err)}`);
-          send({ error: err instanceof Error ? err.message : "agent error" });
-        }
+        send({ error: err instanceof Error ? err.message : "agent error" });
       }
 
       send({ done: true });

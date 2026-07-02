@@ -169,7 +169,7 @@ export async function buildBusinessAgentRequest(
       { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock, mlBlock }) },
       { role: "user", content: question },
     ],
-    opts: { reasoning: false, maxTokens: 1536 },
+    opts: { reasoning: false, maxTokens: 512 },
     gradientUsed: useGradient && !!mlProfile,
     contextUsed: {
       name: business.name,
@@ -187,7 +187,7 @@ export async function askForBusiness(
   opts: { useGradient?: boolean; preferredProvider?: PreferredProvider } = {},
 ): Promise<AgentAnswer> {
   const { messages, opts: chatOpts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM, opts);
-  const result = await chat(messages, chatOpts, opts.preferredProvider);
+  const result = await chat(messages, chatOpts, opts.preferredProvider, false);
   return { ...result, contextUsed };
 }
 
