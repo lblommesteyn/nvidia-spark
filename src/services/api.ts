@@ -2,6 +2,7 @@
 
 export interface Business {
   id: string;
+  isPublic?: boolean;
   name: string;
   businessType: string;
   address: string;
@@ -53,6 +54,7 @@ export interface CivicRecord {
   lon?: number;
   lat?: number;
   distanceM?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface CivicGroup {

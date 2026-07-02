@@ -6,6 +6,8 @@ import { RelativeTime } from "./RelativeTime";
 interface Props {
   title: string;
   status: DataStatus;
+  /** Marks the tile as a premium/API-backed data source. */
+  premium?: boolean;
   /** Short per-tile description shown under the title (WorldMonitor-style). */
   description?: string;
   /** Optional count shown as a pill in the header (e.g. nearby records). */
@@ -28,12 +30,15 @@ const STATUS_LABEL: Record<DataStatus, string> = {
   error: "ERR",
 };
 
-export function Panel({ title, status, description, count, updatedAt, note, wide, dataHref, children }: Props) {
+export function Panel({ title, status, premium, description, count, updatedAt, note, wide, dataHref, children }: Props) {
   return (
     <section class={`panel${wide ? " panel-wide" : ""}`}>
       <header class="panel-header">
         <div class="panel-heading">
-          <h2 class="panel-title">{title}</h2>
+          <h2 class={`panel-title${premium ? " is-premium" : ""}`}>
+            {title}
+            {premium && <span class="panel-title-star" title="Premium data source — requires API keys">★</span>}
+          </h2>
           {description && <p class="panel-desc">{description}</p>}
         </div>
         <div class="panel-status">

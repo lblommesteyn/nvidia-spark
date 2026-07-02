@@ -2623,6 +2623,7 @@ body.lp-visible #particle-canvas {
   left: 8px;
   top: 8px;
   max-width: 340px;
+  max-height: calc(100% - 92px);
   background: rgba(10, 10, 10, 0.85);
   border: 1px solid var(--border);
   padding: 8px 10px;
@@ -2630,7 +2631,10 @@ body.lp-visible #particle-canvas {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  z-index: 5;
+  z-index: 4;
+  overflow: auto;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
 }
 .overlay-title {
   font-size: 9px;
@@ -2653,12 +2657,12 @@ body.lp-visible #particle-canvas {
 
 /* ---- Dashboard grid (Gridstack) ---- */
 .dashboard-grid {
-  padding: 4px;
+  padding: 0;
 }
 
 /* Each Gridstack item hosts a full-height panel */
 .grid-stack-item-content {
-  inset: 4px;
+  inset: 2px;
   overflow: visible;
 }
 .grid-stack-item-content > .panel {
@@ -2820,6 +2824,19 @@ body.lp-visible #particle-canvas {
   color: var(--text);
 }
 
+.panel-title.is-premium {
+  color: #ffcc4d;
+  text-shadow: 0 0 12px rgba(255, 204, 77, 0.22);
+}
+
+.panel-title-star {
+  margin-left: 4px;
+  color: #ffcc4d;
+  font-size: 10px;
+  line-height: 1;
+  vertical-align: top;
+}
+
 .panel-desc {
   margin: 2px 0 0;
   font-size: 10px;
@@ -2879,6 +2896,118 @@ body.lp-visible #particle-canvas {
 .panel-note-text {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- Events calendar ---- */
+.events-calendar {
+  display: grid;
+  gap: 6px;
+}
+
+.events-calendar-head,
+.events-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.events-calendar-month {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffcc4d;
+}
+
+.events-calendar-weekdays {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  font-size: 9px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.events-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.events-calendar-day {
+  min-height: 88px;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.events-calendar-day.is-today {
+  border-color: rgba(255, 204, 77, 0.42);
+  background: rgba(255, 204, 77, 0.06);
+}
+
+.events-calendar-day.has-events {
+  box-shadow: inset 0 0 0 1px rgba(255, 204, 77, 0.08);
+}
+
+.events-calendar-day-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.events-calendar-day-top strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.events-calendar-weekday,
+.events-calendar-count,
+.events-calendar-more {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.events-calendar-count {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 204, 77, 0.12);
+  color: #ffcc4d;
+}
+
+.events-calendar-events {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.events-calendar-event {
+  display: grid;
+  gap: 1px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.events-calendar-time {
+  color: #ffcc4d;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.events-calendar-title {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.events-calendar-more {
+  padding-top: 1px;
+  color: #ffcc4d;
 }
 
 /* ---- Status badges ---- */

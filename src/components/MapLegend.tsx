@@ -23,19 +23,6 @@ export function MapLegend() {
       <span class="map-legend-item"><i style={{ background: "#98002e" }} />GO (by line)</span>
       <span class="map-legend-sep">flow:</span>
       <span class="map-legend-item"><i class="legend-grad" />low → intense</span>
-
-      {/* Premium layers powered by paid, proprietary data providers. */}
-      <span class="map-legend-sep map-legend-sep-premium">premium ★:</span>
-      <span class="map-legend-item map-legend-premium" title="Live road speeds from TomTom Traffic — a paid, proprietary API">
-        <i style={{ background: "#ff7b00" }} />Traffic<span class="legend-star">★</span>
-      </span>
-      <span class="map-legend-item map-legend-premium" title="Venue-precise concerts & games from Ticketmaster / PredictHQ — paid APIs">
-        <i style={{ background: "#f72585" }} />Events<span class="legend-star">★</span>
-      </span>
-      <span class="map-legend-item map-legend-premium" title="Scheduled YYZ arrivals from aviationstack — a paid API">
-        <i style={{ background: "#ffd166" }} />Flights<span class="legend-star">★</span>
-      </span>
-      <span class="map-legend-note">★ premium data source (paid API)</span>
     </div>
   );
 }

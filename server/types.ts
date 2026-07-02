@@ -50,6 +50,9 @@ export interface CivicRecord {
 
 export interface BusinessProfile {
   id: string;
+  ownerEmail?: string;
+  ownerName?: string;
+  isPublic?: boolean;
   name: string;
   businessType: string;
   address: string;

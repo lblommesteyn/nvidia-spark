@@ -145,7 +145,10 @@ app.get("/.well-known/ai-plugin.json", (c) => c.json(aiManifest()));
  * onboarding flow and the in-app "+ Business" action. Throws an Error whose
  * `.status` carries the HTTP code for the caller to surface.
  */
-async function createBusinessFromInput(body: Record<string, unknown>): Promise<ReturnType<typeof businesses.create>> {
+async function createBusinessFromInput(
+  body: Record<string, unknown>,
+  owner?: { email?: string; name?: string },
+): Promise<ReturnType<typeof businesses.create>> {
   if (!body?.name || !body?.businessType || !body?.address) {
     const err = new Error("name, businessType and address are required") as Error & { status?: number };
     err.status = 400;
@@ -187,9 +190,17 @@ async function createBusinessFromInput(body: Record<string, unknown>): Promise<R
     transitRelevance: transit.relevance,
     nearbyRoutes: transit.routes.map((r) => r.name),
   };
-  const created = businesses.create(input);
+  const created = businesses.create(input, owner);
   enqueueBusinessResearch(created);
   return created;
+}
+
+function getOwnedBusiness(c: Parameters<typeof sessionFromRequest>[0], id: string) {
+  const session = sessionFromRequest(c);
+  if (!session) return null;
+  const b = businesses.get(id);
+  if (!b) return null;
+  return businesses.owns(b.id, session.operatorEmail) ? b : null;
 }
 
 /**
@@ -225,7 +236,7 @@ app.post("/api/auth/register", async (c) => {
 
   let created;
   try {
-    created = await createBusinessFromInput(business);
+    created = await createBusinessFromInput(business, { email: operatorEmail, name: operatorName });
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     return c.json({ error: err instanceof Error ? err.message : "could not create business" }, status as 400);
@@ -246,7 +257,9 @@ app.post("/api/auth/register", async (c) => {
 app.get("/api/auth/session", (c) => {
   const session = sessionFromRequest(c);
   if (!session) return c.json({ error: "unauthorized" }, 401);
-  const business = session.businessId ? businesses.get(session.businessId) ?? null : null;
+  const business = session.businessId && businesses.owns(session.businessId, session.operatorEmail)
+    ? businesses.get(session.businessId) ?? null
+    : null;
   return c.json({
     operator: { name: session.operatorName, email: session.operatorEmail },
     business,
@@ -392,7 +405,7 @@ app.get("/api/context", async (c) => {
   const businessId = c.req.query("businessId");
   const radiusM = Number(c.req.query("radius") ?? 750);
   if (businessId) {
-    const b = businesses.get(businessId);
+    const b = getOwnedBusiness(c, businessId);
     if (!b) return c.json({ error: "business not found" }, 404);
     return c.json(await buildContext(scopeFromBusiness(b, radiusM)));
   }
@@ -408,7 +421,9 @@ app.get("/api/forecast", async (c) => {
   const radiusM = Number(c.req.query("radius") ?? 750);
   try {
     if (businessId) {
-      return c.json(await forecastForBusiness(businessId, radiusM));
+      const b = getOwnedBusiness(c, businessId);
+      if (!b) return c.json({ error: "business not found" }, 404);
+      return c.json(await forecastForBusiness(b.id, radiusM));
     }
     const lon = Number(c.req.query("lon"));
     const lat = Number(c.req.query("lat"));
@@ -429,7 +444,9 @@ app.get("/api/forecast/week", async (c) => {
   const radiusM = Number(c.req.query("radius") ?? 750);
   try {
     if (businessId) {
-      return c.json(await weekForecastForBusiness(businessId, radiusM));
+      const b = getOwnedBusiness(c, businessId);
+      if (!b) return c.json({ error: "business not found" }, 404);
+      return c.json(await weekForecastForBusiness(b.id, radiusM));
     }
     const lon = Number(c.req.query("lon"));
     const lat = Number(c.req.query("lat"));
@@ -469,17 +486,26 @@ app.get("/api/forecast/dataset", async (c) => {
 });
 
 // ---- Businesses CRUD ----
-app.get("/api/businesses", (c) => c.json(businesses.list()));
+app.get("/api/businesses", (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  return c.json(businesses.list(session.operatorEmail));
+});
 
 app.get("/api/businesses/:id", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   return b ? c.json(b) : c.json({ error: "not found" }, 404);
 });
 
 app.post("/api/businesses", async (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => null);
   try {
-    const created = await createBusinessFromInput(body ?? {});
+    const created = await createBusinessFromInput(body ?? {}, {
+      email: session.operatorEmail,
+      name: session.operatorName,
+    });
     return c.json(created, 201);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
@@ -488,26 +514,29 @@ app.post("/api/businesses", async (c) => {
 });
 
 app.get("/api/businesses/:id/research", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const research = researchStatus(b.id);
   return c.json(research ?? { businessId: b.id, status: "pending", briefing: "", sources: [], generatedAt: null });
 });
 
 app.post("/api/businesses/:id/research", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const radiusM = Number(c.req.query("radius") ?? 750);
   return c.json(await runBusinessResearch(b, radiusM));
 });
 
-app.delete("/api/businesses/:id", (c) =>
-  c.json({ deleted: businesses.remove(c.req.param("id")) }),
-);
+app.delete("/api/businesses/:id", (c) => {
+  const b = getOwnedBusiness(c, c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  if (b.isPublic) return c.json({ error: "forbidden", message: "demo business cannot be deleted" }, 403);
+  return c.json({ deleted: businesses.remove(b.id) });
+});
 
 // ---- Generate business demand baseline on demand ----
 app.post("/api/businesses/:id/generate", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const days = Math.min(Number(c.req.query("days") ?? 90), 365);
   // Dynamically import so the generator only loads when called.
@@ -520,7 +549,7 @@ app.post("/api/businesses/:id/generate", async (c) => {
 
 // ---- Business history (revenue + customer counts) ----
 app.get("/api/businesses/:id/history", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const days = Math.min(Number(c.req.query("days") ?? 90), 365);
   const rows = businessHistory.forBusiness(b.id, days);
@@ -529,7 +558,7 @@ app.get("/api/businesses/:id/history", (c) => {
 });
 
 app.post("/api/businesses/:id/history", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
@@ -547,7 +576,7 @@ app.post("/api/businesses/:id/history", async (c) => {
 
 // ---- Business schedule (staff hours) ----
 app.get("/api/businesses/:id/schedule", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const upcoming = businessSchedule.upcoming(b.id, 7);
   const recent   = businessSchedule.forBusiness(b.id, 14);
@@ -555,7 +584,7 @@ app.get("/api/businesses/:id/schedule", (c) => {
 });
 
 app.post("/api/businesses/:id/schedule", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
@@ -703,7 +732,9 @@ app.post("/api/agent", async (c) => {
   }
   try {
     if (body.businessId) {
-      return c.json(await askForBusiness(body.businessId, body.question, radiusM));
+      const b = getOwnedBusiness(c, String(body.businessId));
+      if (!b) return c.json({ error: "business not found" }, 404);
+      return c.json(await askForBusiness(b.id, body.question, radiusM));
     }
     const lon = Number(body.lon);
     const lat = Number(body.lat);
@@ -728,6 +759,8 @@ app.post("/api/agent/stream", async (c) => {
     return c.json({ error: "question too long (max 2000 chars)" }, 400);
   }
   if (!body.businessId) return c.json({ error: "businessId required for streaming" }, 400);
+  const b = getOwnedBusiness(c, String(body.businessId));
+  if (!b) return c.json({ error: "business not found" }, 404);
   const radiusM = Number(body.radiusM) || 750;
   const useGradient = body.useGradient !== false;
 
@@ -752,7 +785,7 @@ app.post("/api/agent/stream", async (c) => {
       // Build the prompt/context once (may throw → report and close).
       let req;
       try {
-        req = await buildBusinessAgentRequest(body.businessId, body.question, radiusM, { useGradient });
+        req = await buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient });
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
         try { controller.close(); } catch { /* already closed */ }
