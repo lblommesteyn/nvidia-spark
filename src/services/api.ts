@@ -123,7 +123,7 @@ export interface AgentAnswer {
   contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
 }
 
-export type AgentMode = "nemotron-ml" | "claude";
+export type AgentMode = "nemotron-ml" | "claude" | "ml";
 
 export type DemandLevel = "low" | "moderate" | "elevated" | "surge";
 

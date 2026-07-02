@@ -264,7 +264,7 @@ export function AgentChat({ business }: { business: Business }) {
         }
         if (e.provider) {
           const label = e.model || e.provider;
-          const mode = e.mode === "claude" ? "Claude" : "Nemotron + ML";
+          const mode = e.mode === "claude" ? "Claude" : e.mode === "ml" ? "ML only" : "Nemotron + ML";
           setStreamingMsg({ provider: `${label} · ${mode}` });
         }
         if (e.delta) {
@@ -324,7 +324,9 @@ export function AgentChat({ business }: { business: Business }) {
           <p class="panel-desc">
             {agentMode === "nemotron-ml"
               ? "Nemotron + the CityFlow demand model, plus Toronto live data, street research, and your revenue/schedule."
-              : "Claude answering from Toronto live data, street research, and your revenue/schedule."}
+              : agentMode === "ml"
+                ? "Raw CityFlow ML demand forecast — predicted customer counts by hour, no language model."
+                : "Claude answering from Toronto live data, street research, and your revenue/schedule."}
           </p>
         </div>
         <div class="agent-header-side">
@@ -337,6 +339,7 @@ export function AgentChat({ business }: { business: Business }) {
               onChange={(e) => setAgentMode((e.target as HTMLSelectElement).value as AgentMode)}
             >
               <option value="nemotron-ml">Nemotron + ML</option>
+              <option value="ml">ML only</option>
               <option value="claude">Claude</option>
             </select>
           </label>

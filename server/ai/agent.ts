@@ -4,7 +4,7 @@ import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
 import { businessHistoryBlock } from "./bizdata.ts";
 import { weekForecastForBusiness } from "./forecast.ts";
 import { getResearchBlock } from "./web-agent.ts";
-import { mlWeeklyProfile } from "./mlforecast.ts";
+import { mlWeeklyProfile, type MLWeeklyProfile } from "./mlforecast.ts";
 import { businesses, businessHistory, businessSchedule } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
@@ -24,7 +24,7 @@ export interface AgentRequest {
   contextUsed: AgentAnswer["contextUsed"];
 }
 
-export type AgentMode = "nemotron-ml" | "claude";
+export type AgentMode = "nemotron-ml" | "claude" | "ml";
 
 function weekForecastBlock(businessId: string, week: Awaited<ReturnType<typeof weekForecastForBusiness>>): string {
   const dayLines = week.days
@@ -169,7 +169,7 @@ export async function buildBusinessAgentRequest(
       { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock, mlBlock }) },
       { role: "user", content: question },
     ],
-    opts: { reasoning: false, maxTokens: 512 },
+    opts: { reasoning: false, maxTokens: 1536 },
     gradientUsed: useGradient && !!mlProfile,
     contextUsed: {
       name: business.name,
@@ -189,6 +189,74 @@ export async function askForBusiness(
   const { messages, opts: chatOpts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM, opts);
   const result = await chat(messages, chatOpts, opts.preferredProvider, false);
   return { ...result, contextUsed };
+}
+
+const DOW_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** Current Toronto hour (0-23) and ML day-of-week (Mon=0..Sun=6). */
+function torontoNow(): { hour: number; mlDow: number } {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-CA", { hour: "numeric", hour12: false, timeZone: "America/Toronto" }).format(new Date()),
+  ) % 24;
+  const jsDay = new Date(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(new Date()),
+  ).getDay();
+  return { hour, mlDow: (jsDay + 6) % 7 };
+}
+
+/** Format the raw ML demand grid into a readable answer — no LLM interpretation. */
+function formatMlOnlyAnswer(business: BusinessProfile, profile: MLWeeklyProfile): string {
+  const { grid, model, archetype } = profile;
+  const peakMax = Math.max(...grid.flat(), 1);
+  const { hour, mlDow } = torontoNow();
+  const todayRow = grid[mlDow] ?? [];
+  const pct = (v: number) => Math.round((v / peakMax) * 100);
+
+  const nowVal = Math.round(todayRow[hour] ?? 0);
+  const todayPeakH = todayRow.length ? todayRow.indexOf(Math.max(...todayRow)) : 0;
+  const todayPeakV = Math.round(todayRow[todayPeakH] ?? 0);
+
+  const nextHours: string[] = [];
+  for (let h = hour; h < Math.min(hour + 6, 24); h++) {
+    const v = todayRow[h] ?? 0;
+    nextHours.push(`  ${String(h).padStart(2, "0")}:00 — ~${Math.round(v)} customers/hr (${pct(v)}% of peak)`);
+  }
+
+  const weekLines = grid.map((row, d) => {
+    const ph = row.indexOf(Math.max(...row));
+    const pv = Math.round(row[ph] ?? 0);
+    const avg = Math.round(row.reduce((a, b) => a + b, 0) / 24);
+    return `  ${DOW_FULL[d]}: peak ${String(ph).padStart(2, "0")}:00 (~${pv}/hr), avg ~${avg}/hr${d === mlDow ? "  ← today" : ""}`;
+  });
+
+  return [
+    `CityFlow ML demand model — ${business.businessType} (${archetype} archetype, ${model === "ml" ? "gradient-boosting" : "heuristic"} model)`,
+    "",
+    `Right now (${DOW_FULL[mlDow]} ${String(hour).padStart(2, "0")}:00): ~${nowVal} customers/hr — ${pct(todayRow[hour] ?? 0)}% of the weekly peak (${Math.round(peakMax)}/hr).`,
+    `Today's peak: ${String(todayPeakH).padStart(2, "0")}:00 (~${todayPeakV} customers/hr).`,
+    "",
+    "Next hours today:",
+    ...nextHours,
+    "",
+    "Weekly demand peaks:",
+    ...weekLines,
+    "",
+    "Raw ML forecast — no language-model interpretation applied.",
+  ].join("\n");
+}
+
+/** ML-only answer: the raw gradient demand model, bypassing every LLM. */
+export async function mlOnlyAnswer(businessId: string, radiusM = 750): Promise<AgentAnswer> {
+  const business = businesses.get(businessId);
+  if (!business) throw new Error("business not found");
+  const profile = await mlWeeklyProfile(business.businessType).catch(() => null);
+  if (!profile) throw new Error("ML demand model unavailable");
+  return {
+    text: formatMlOnlyAnswer(business, profile),
+    provider: "ml",
+    model: `cityflow-${profile.model}`,
+    contextUsed: { name: business.name, businessType: business.businessType, radiusM, highlights: [] },
+  };
 }
 
 export async function askForPoint(

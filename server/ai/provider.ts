@@ -488,7 +488,7 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
     `${base}/chat/completions`,
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 180_000,
       headers,
       body: JSON.stringify({
         model,
@@ -525,7 +525,7 @@ async function openai(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
     "https://api.openai.com/v1/chat/completions",
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 180_000,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -546,7 +546,7 @@ async function anthropic(messages: ChatMessage[], opts: ChatOptions): Promise<Ch
     "https://api.anthropic.com/v1/messages",
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 180_000,
       headers: {
         "Content-Type": "application/json",
         "x-api-key": process.env.ANTHROPIC_API_KEY!,
@@ -570,7 +570,7 @@ async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
     `${host}/api/chat`,
     {
       method: "POST",
-      timeoutMs: 120_000,
+      timeoutMs: 180_000,
       body: JSON.stringify({ model, messages: msgs, stream: false, options }),
     },
   );

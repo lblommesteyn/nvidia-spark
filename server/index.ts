@@ -23,7 +23,7 @@ import {
   weekForecastForPoint,
 } from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
-import { askForBusiness, askForPoint, buildBusinessAgentRequest } from "./ai/agent.ts";
+import { askForBusiness, askForPoint, buildBusinessAgentRequest, mlOnlyAnswer } from "./ai/agent.ts";
 import { enqueueBusinessResearch, researchStatus, runBusinessResearch } from "./ai/web-agent.ts";
 import { findSimilarMoments } from "./ai/patterns.ts";
 import { startSnapshotService } from "./ai/snapshot.ts";
@@ -734,6 +734,9 @@ app.post("/api/agent", async (c) => {
     if (body.businessId) {
       const b = getOwnedBusiness(c, String(body.businessId));
       if (!b) return c.json({ error: "business not found" }, 404);
+      if (body.providerMode === "ml") {
+        return c.json(await mlOnlyAnswer(b.id, radiusM));
+      }
       return c.json(await askForBusiness(b.id, body.question, radiusM, {
         useGradient: body.providerMode !== "claude",
         preferredProvider: body.providerMode === "claude" ? "anthropic" : "nemotron",
@@ -765,7 +768,11 @@ app.post("/api/agent/stream", async (c) => {
   const b = getOwnedBusiness(c, String(body.businessId));
   if (!b) return c.json({ error: "business not found" }, 404);
   const radiusM = Number(body.radiusM) || 750;
-  const agentMode = body.providerMode === "claude" ? "claude" : "nemotron-ml";
+  const agentMode = body.providerMode === "claude"
+    ? "claude"
+    : body.providerMode === "ml"
+      ? "ml"
+      : "nemotron-ml";
   const useGradient = agentMode === "nemotron-ml" ? body.useGradient !== false : false;
   const preferredProvider = agentMode === "claude" ? "anthropic" : "nemotron";
 
@@ -786,6 +793,30 @@ app.post("/api/agent/stream", async (c) => {
           /* client disconnected */
         }
       };
+
+      // ML-only mode: return the raw gradient demand forecast, no LLM involved.
+      if (agentMode === "ml") {
+        try {
+          const ans = await mlOnlyAnswer(b.id, radiusM);
+          send({
+            meta: true,
+            provider: ans.provider,
+            model: ans.model,
+            fallbacks: [],
+            gradientUsed: true,
+            mode: "ml",
+            contextUsed: ans.contextUsed,
+          });
+          console.log(`[agent/stream] provider=ml model=${ans.model} chars=${ans.text.length}`);
+          send({ delta: ans.text });
+        } catch (err) {
+          send({ error: err instanceof Error ? err.message : "ML demand model unavailable" });
+        }
+        send({ done: true });
+        try { controller.close(); } catch { /* already closed */ }
+        release();
+        return;
+      }
 
       // Build the prompt/context once (may throw → report and close).
       let req;
