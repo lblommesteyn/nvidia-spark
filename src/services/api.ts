@@ -540,7 +540,7 @@ export const api = {
    */
   agentStream: async (
     body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean; providerMode?: AgentMode },
-    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; mode?: AgentMode; done?: boolean; error?: string }) => void,
+    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; mode?: AgentMode; done?: boolean; error?: string; reset?: boolean; fallback?: string }) => void,
   ): Promise<void> => {
     const res = await apiFetch("/api/agent/stream", {
       method: "POST",

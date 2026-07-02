@@ -267,6 +267,10 @@ export function AgentChat({ business }: { business: Business }) {
           const mode = e.mode === "claude" ? "Claude" : e.mode === "ml" ? "ML only" : "Nemotron + ML";
           setStreamingMsg({ provider: `${label} · ${mode}` });
         }
+        if (e.reset) {
+          streamBuf.current = "";
+          setStreamingMsg({ text: "", provider: "RULE-BASED · Nemotron + ML" });
+        }
         if (e.delta) {
           streamBuf.current += e.delta;
           setStreamingMsg({ text: streamBuf.current });

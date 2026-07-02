@@ -34,7 +34,18 @@ import {
   unregisterSseClient,
   sseClientCount,
 } from "./ai/alerts.ts";
-import { activeProvider, chat, chatStream, describeChain, resolveProvider } from "./ai/provider.ts";
+import {
+  activeProvider,
+  chat,
+  chatStream,
+  describeChain,
+  isWeakAnswer,
+  mockAnswerStream,
+  resolveProvider,
+  warmNemotron,
+} from "./ai/provider.ts";
+import { llmLogPath } from "./ai/llm-log.ts";
+import { bootstrapNemotronEnv } from "./ai/nemotron-bootstrap.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
 import { parakeetHealth, parakeetTranscribe, PARAKEET_BASE } from "./ai/parakeet.ts";
 import { nearestCameras, cameraImageUrl } from "./sources/cameras.ts";
@@ -124,6 +135,7 @@ app.get("/api/health", (c) =>
     ok: true,
     provider: activeProvider(),
     llm: describeChain(),
+    llmLog: llmLogPath(),
     sources: CIVIC_SOURCES.map((s) => s.key),
     sseClients: sseClientCount(),
     patternRows: snapshots.count(),
@@ -796,6 +808,7 @@ app.post("/api/agent/stream", async (c) => {
 
       // ML-only mode: return the raw gradient demand forecast, no LLM involved.
       if (agentMode === "ml") {
+        const mlStarted = Date.now();
         try {
           const ans = await mlOnlyAnswer(b.id, radiusM);
           send({
@@ -807,7 +820,7 @@ app.post("/api/agent/stream", async (c) => {
             mode: "ml",
             contextUsed: ans.contextUsed,
           });
-          console.log(`[agent/stream] provider=ml model=${ans.model} chars=${ans.text.length}`);
+          console.log(`[agent/stream] provider=ml model=${ans.model} chars=${ans.text.length} durationMs=${Date.now() - mlStarted}`);
           send({ delta: ans.text });
         } catch (err) {
           send({ error: err instanceof Error ? err.message : "ML demand model unavailable" });
@@ -818,10 +831,13 @@ app.post("/api/agent/stream", async (c) => {
         return;
       }
 
-      // Build the prompt/context once (may throw → report and close).
+      // Build context + warm model in parallel (cached context skips re-fetching feeds).
       let req;
       try {
-        req = await buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient, preferredProvider });
+        [req] = await Promise.all([
+          buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient, preferredProvider }),
+          preferredProvider === "nemotron" ? warmNemotron() : Promise.resolve(),
+        ]);
       } catch (err) {
         send({ error: err instanceof Error ? err.message : "agent error" });
         try { controller.close(); } catch { /* already closed */ }
@@ -830,12 +846,6 @@ app.post("/api/agent/stream", async (c) => {
       }
 
       const { provider, model, fallbacks } = await resolveProvider(preferredProvider);
-      if (provider !== preferredProvider) {
-        send({ error: `${agentMode === "claude" ? "Claude" : "Nemotron"} unavailable` });
-        try { controller.close(); } catch { /* already closed */ }
-        release();
-        return;
-      }
       send({
         meta: true,
         provider,
@@ -846,15 +856,29 @@ app.post("/api/agent/stream", async (c) => {
         contextUsed: req.contextUsed,
       });
 
+      let streamed = "";
+      let streamFailed = false;
+      const answerStarted = Date.now();
       try {
-        const result = await chat(req.messages, req.opts, preferredProvider, false);
-        if (result.provider === "mock" || result.provider !== preferredProvider) {
-          throw new Error(`${agentMode === "claude" ? "Claude" : "Nemotron"} unavailable`);
+        for await (const delta of chatStream(req.messages, req.opts, preferredProvider, false)) {
+          streamed += delta;
+          send({ delta });
         }
-        console.log(`[agent/stream] provider=${provider} model=${model} chars=${result.text.length}`);
-        send({ delta: result.text });
       } catch (err) {
-        send({ error: err instanceof Error ? err.message : "agent error" });
+        streamFailed = true;
+        console.warn("[agent/stream] model stream failed:", err instanceof Error ? err.message : err);
+      }
+
+      if (streamFailed || isWeakAnswer(streamed)) {
+        console.log(`[agent/stream] falling back to rule-based answer (streamed=${streamed.length} chars, durationMs=${Date.now() - answerStarted})`);
+        send({ reset: true, fallback: "mock" });
+        for await (const delta of mockAnswerStream(req.messages)) {
+          streamed += delta;
+          send({ delta });
+        }
+        console.log(`[agent/stream] mock fallback done durationMs=${Date.now() - answerStarted}`);
+      } else {
+        console.log(`[agent/stream] provider=${provider} model=${model} chars=${streamed.length} durationMs=${Date.now() - answerStarted}`);
       }
 
       send({ done: true });
@@ -976,11 +1000,21 @@ if (process.env.SERVE_STATIC === "1") {
 }
 
 const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port });
-console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${activeProvider()})`);
 
-// Start background snapshot capture — builds the historical pattern library over time.
-startSnapshotService(15 * 60_000);
+async function main() {
+  await bootstrapNemotronEnv();
 
-// Start proactive alert monitor — diffs signals every 5 min and broadcasts alerts via SSE.
-startMonitor(5 * 60_000);
+  serve({ fetch: app.fetch, port });
+  console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${activeProvider()})`);
+
+  // Start background snapshot capture — builds the historical pattern library over time.
+  startSnapshotService(15 * 60_000);
+
+  // Start proactive alert monitor — diffs signals every 5 min and broadcasts alerts via SSE.
+  startMonitor(5 * 60_000);
+}
+
+main().catch((err) => {
+  console.error("[toronto-monitor] failed to start:", err);
+  process.exit(1);
+});

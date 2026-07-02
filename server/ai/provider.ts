@@ -18,6 +18,7 @@
  * pin to the single preferred provider.
  */
 import { fetchJson } from "../cache.ts";
+import { logLlmCall } from "./llm-log.ts";
 
 type Provider = "nemotron" | "openai" | "anthropic" | "ollama" | "mock";
 export type PreferredProvider = Exclude<Provider, "mock">;
@@ -59,10 +60,17 @@ export function providerChain(preferred?: PreferredProvider, allowMockFallback =
 
   const fallbackDisabled = /^(off|false|0|no)$/i.test(process.env.LLM_FALLBACK ?? "");
   const configured = fallbackDisabled ? chain.slice(0, 1) : chain;
-  if (preferred && configured.includes(preferred)) {
+
+  // UI "Nemotron + ML" maps to ollama when only OLLAMA_HOST is set (no /v1 URL).
+  const effectivePreferred =
+    preferred === "nemotron" && !configured.includes("nemotron") && configured.includes("ollama")
+      ? "ollama"
+      : preferred;
+
+  if (effectivePreferred && configured.includes(effectivePreferred)) {
     return allowMockFallback
-      ? [preferred, ...configured.filter((provider) => provider !== preferred), "mock"]
-      : [preferred];
+      ? [effectivePreferred, ...configured.filter((provider) => provider !== effectivePreferred), "mock"]
+      : [effectivePreferred];
   }
   return allowMockFallback ? [...configured, "mock"] : configured;
 }
@@ -82,6 +90,19 @@ function modelFor(provider: Provider): string {
   }
 }
 
+function nemotronTimeoutMs(): number {
+  const n = Number(process.env.NEMOTRON_TIMEOUT_MS ?? 120_000);
+  return Number.isFinite(n) && n >= 30_000 ? n : 120_000;
+}
+
+function lastUserQuestion(messages: ChatMessage[]): string {
+  return [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+}
+
+function systemPromptChars(messages: ChatMessage[]): number {
+  return messages.filter((m) => m.role === "system").reduce((n, m) => n + m.content.length, 0);
+}
+
 function callOnce(provider: Provider, messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
   switch (provider) {
     case "nemotron": return nemotron(messages, opts);
@@ -98,25 +119,83 @@ export async function chat(
   preferred?: PreferredProvider,
   allowMockFallback = true,
 ): Promise<ChatResult> {
+  const started = Date.now();
+  const question = lastUserQuestion(messages);
+  const systemChars = systemPromptChars(messages);
   const chain = providerChain(preferred, allowMockFallback);
+  if (chain.length === 0 && !allowMockFallback && preferred) {
+    throw new Error(
+      `${preferred} unavailable — set NEMOTRON_BASE_URL in .env (local DGX: http://127.0.0.1:11435/v1)`,
+    );
+  }
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
-    if (provider === "mock") return mock(messages);
+    if (provider === "mock") {
+      const result = mock(messages);
+      logLlmCall({
+        ts: new Date().toISOString(),
+        provider: result.provider,
+        model: result.model,
+        durationMs: Date.now() - started,
+        question,
+        systemChars,
+        response: result.text,
+        ok: true,
+        note: "mock-fallback",
+      });
+      return result;
+    }
     try {
       const result = await callOnce(provider, messages, opts);
-      if (result.text?.trim()) return result;
-      // Empty output → treat as a soft failure and fall through to the next.
+      if (result.text?.trim()) {
+        logLlmCall({
+          ts: new Date().toISOString(),
+          provider: result.provider,
+          model: result.model,
+          durationMs: Date.now() - started,
+          question,
+          systemChars,
+          response: result.text,
+          ok: true,
+        });
+        return result;
+      }
       console.warn(`[provider] ${provider} returned empty text — falling back`);
       if (!allowMockFallback && preferred) throw new Error(`${provider} returned empty text`);
     } catch (err) {
       console.warn(`[provider] ${provider} failed (${err instanceof Error ? err.message : err}) — falling back`);
-      if (!allowMockFallback && preferred) throw err;
+      if (!allowMockFallback && preferred) {
+        logLlmCall({
+          ts: new Date().toISOString(),
+          provider,
+          model: modelFor(provider),
+          durationMs: Date.now() - started,
+          question,
+          systemChars,
+          response: "",
+          ok: false,
+          note: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     }
   }
   if (!allowMockFallback && preferred) {
     throw new Error(`${preferred} unavailable`);
   }
-  return mock(messages);
+  const result = mock(messages);
+  logLlmCall({
+    ts: new Date().toISOString(),
+    provider: result.provider,
+    model: result.model,
+    durationMs: Date.now() - started,
+    question,
+    systemChars,
+    response: result.text,
+    ok: true,
+    note: "mock-fallback",
+  });
+  return result;
 }
 
 /** Provider + model identity without making a call (preferred provider only). */
@@ -201,9 +280,7 @@ export async function resolveProvider(preferred?: PreferredProvider): Promise<{ 
 async function* streamOne(provider: Provider, messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
   switch (provider) {
     case "nemotron": {
-      // Single non-streaming call — the /v1 SSE path is unreliable on local NIMs.
-      const { text } = await nemotron(messages, opts);
-      if (text) yield text;
+      yield* nemotronStream(messages, opts);
       return;
     }
     case "openai":
@@ -229,31 +306,82 @@ export async function* chatStream(
   preferred?: PreferredProvider,
   allowMockFallback = true,
 ): AsyncGenerator<string> {
+  const started = Date.now();
+  const question = lastUserQuestion(messages);
+  const systemChars = systemPromptChars(messages);
+  let fullText = "";
+  let usedProvider = preferred ?? activeProvider();
+  let usedModel = modelFor(usedProvider as Provider);
+
   const chain = providerChain(preferred, allowMockFallback);
+  if (chain.length === 0 && !allowMockFallback && preferred) {
+    throw new Error(
+      `${preferred} unavailable — set NEMOTRON_BASE_URL in .env (local DGX: http://127.0.0.1:11435/v1)`,
+    );
+  }
   for (let i = 0; i < chain.length; i++) {
     const provider = chain[i];
     if (provider === "mock") {
-      yield* mockStream(messages);
+      for await (const delta of mockStream(messages)) {
+        fullText += delta;
+        yield delta;
+      }
+      logLlmCall({
+        ts: new Date().toISOString(),
+        provider: "mock",
+        model: "rule-based",
+        durationMs: Date.now() - started,
+        question,
+        systemChars,
+        response: fullText,
+        ok: true,
+        note: "mock-fallback",
+      });
       return;
     }
+    usedProvider = provider;
+    usedModel = modelFor(provider);
     let emitted = 0;
     try {
       for await (const delta of streamOne(provider, messages, opts)) {
         if (delta) {
           emitted += delta.length;
+          fullText += delta;
           yield delta;
         }
       }
     } catch (err) {
-      // If we already streamed some tokens we can't cleanly restart on another
-      // provider (would duplicate), so stop here. Otherwise fall through.
-      if (emitted > 0) return;
+      if (emitted > 0) {
+        logLlmCall({
+          ts: new Date().toISOString(),
+          provider: usedProvider,
+          model: usedModel,
+          durationMs: Date.now() - started,
+          question,
+          systemChars,
+          response: fullText,
+          ok: !isWeakAnswer(fullText),
+          note: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
       if (!allowMockFallback && preferred) throw err;
       console.warn(`[provider] ${provider} stream failed (${err instanceof Error ? err.message : err}) — falling back`);
       continue;
     }
-    if (emitted > 0) return;
-    // Provider produced nothing (e.g. all <think>) → try the next in the chain.
+    if (emitted > 0 && !isWeakAnswer(fullText)) {
+      logLlmCall({
+        ts: new Date().toISOString(),
+        provider: usedProvider,
+        model: usedModel,
+        durationMs: Date.now() - started,
+        question,
+        systemChars,
+        response: fullText,
+        ok: true,
+      });
+      return;
+    }
     console.warn(`[provider] ${provider} stream produced no visible output — falling back`);
     if (!allowMockFallback && preferred) {
       throw new Error(`${provider} produced no visible output`);
@@ -262,7 +390,22 @@ export async function* chatStream(
   if (!allowMockFallback && preferred) {
     throw new Error(`${preferred} unavailable`);
   }
-  yield* mockStream(messages);
+  fullText = "";
+  for await (const delta of mockStream(messages)) {
+    fullText += delta;
+    yield delta;
+  }
+  logLlmCall({
+    ts: new Date().toISOString(),
+    provider: "mock",
+    model: "rule-based",
+    durationMs: Date.now() - started,
+    question,
+    systemChars,
+    response: fullText,
+    ok: true,
+    note: "mock-fallback",
+  });
 }
 
 /**
@@ -301,8 +444,9 @@ async function* openAISSE(
         if (data === "[DONE]") return;
         try {
           const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta?.content ?? "";
-          if (delta) yield delta as string;
+          const choice = json.choices?.[0]?.delta;
+          const delta = (choice?.content ?? choice?.reasoning ?? "") as string;
+          if (delta) yield delta;
         } catch {
           /* keep-alive comment or partial frame — ignore */
         }
@@ -363,8 +507,9 @@ async function* ollamaNativeStream(
   options: Record<string, unknown>,
 ): AsyncGenerator<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45_000);
+  const timer = setTimeout(() => controller.abort(), nemotronTimeoutMs());
   const stripper = makeThinkStripper();
+  let reasoningBuf = "";
   try {
     const res = await fetch(`${host}/api/chat`, {
       method: "POST",
@@ -388,10 +533,13 @@ async function* ollamaNativeStream(
         if (!line) continue;
         try {
           const json = JSON.parse(line);
-          const raw = json.message?.content ?? "";
+          const raw = (json.message?.content ?? "") as string;
+          const reasoning = (json.message?.reasoning ?? "") as string;
           if (raw) {
-            const clean = stripper.push(raw as string);
+            const clean = stripper.push(raw);
             if (clean) yield clean;
+          } else if (reasoning) {
+            reasoningBuf += reasoning;
           }
         } catch {
           /* partial line — ignore */
@@ -400,8 +548,61 @@ async function* ollamaNativeStream(
     }
     const tail = stripper.flush();
     if (tail) yield tail;
+    if (reasoningBuf.trim()) yield reasoningBuf.trim();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Rule-based fallback answer (same template as the mock provider). */
+export function mockAnswer(messages: ChatMessage[]): ChatResult {
+  return mock(messages);
+}
+
+export function mockAnswerStream(messages: ChatMessage[]): AsyncGenerator<string> {
+  return mockStream(messages);
+}
+
+/** True when model output is too thin to show — triggers rule-based fallback. */
+export function isWeakAnswer(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (t.length < 40) return true;
+  if (/^(okay|let me|the user|i need to|hmm|thinking)/i.test(t) && t.length < 120) return true;
+  return false;
+}
+
+let nemotronWarmedAt = 0;
+const WARM_TTL_MS = Number(process.env.NEMOTRON_WARM_TTL_MS ?? 90_000);
+
+/** Lightweight completion to load weights before the real agent prompt. */
+export async function warmNemotron(): Promise<void> {
+  if (!process.env.NEMOTRON_BASE_URL) return;
+  const now = Date.now();
+  if (now - nemotronWarmedAt < WARM_TTL_MS) return;
+
+  const base = process.env.NEMOTRON_BASE_URL.replace(/\/$/, "");
+  const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  try {
+    await fetchJson(`${base}/chat/completions`, {
+      method: "POST",
+      timeoutMs: 60_000,
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Reply with exactly: ready" }],
+        max_tokens: 8,
+        temperature: 0,
+      }),
+    });
+    nemotronWarmedAt = now;
+    console.log("[provider] Nemotron warm-up ok");
+  } catch (err) {
+    console.warn("[provider] Nemotron warm-up failed (continuing):", err instanceof Error ? err.message : err);
   }
 }
 
@@ -488,7 +689,7 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
     `${base}/chat/completions`,
     {
       method: "POST",
-      timeoutMs: 180_000,
+      timeoutMs: nemotronTimeoutMs(),
       headers,
       body: JSON.stringify({
         model,
@@ -506,13 +707,70 @@ async function nemotron(messages: ChatMessage[], opts: ChatOptions): Promise<Cha
   throw new Error("Nemotron returned no visible answer");
 }
 
+async function* nemotronStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
+  const base = (process.env.NEMOTRON_BASE_URL ?? "http://localhost:8000/v1").replace(/\/$/, "");
+  const model = process.env.NEMOTRON_MODEL ?? "nvidia/llama-3.3-nemotron-super-49b-v1";
+  const msgs = withReasoningDirective(messages, opts);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  const apiKey = process.env.NEMOTRON_API_KEY ?? process.env.FORECAST_API_KEY;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const payload = {
+    model,
+    messages: msgs,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 1024,
+    stream: true,
+  };
+
+  let emitted = 0;
+  const stripper = makeThinkStripper();
+  let reasoningBuf = "";
+  try {
+    for await (const delta of openAISSE(`${base}/chat/completions`, headers, payload, nemotronTimeoutMs())) {
+      if (!delta) continue;
+      // Prefer answer tokens; hold reasoning until we know content is empty.
+      const looksLikeReasoningMeta = /^(okay|let me|the user|we need to|i need to|hmm)/i.test(delta.trim());
+      const clean = stripper.push(delta);
+      if (!clean) continue;
+      if (looksLikeReasoningMeta && emitted === 0) {
+        reasoningBuf += clean;
+        continue;
+      }
+      emitted += clean.length;
+      yield clean;
+    }
+    const tail = stripper.flush();
+    if (tail) {
+      if (emitted === 0) reasoningBuf += tail;
+      else {
+        emitted += tail.length;
+        yield tail;
+      }
+    }
+    if (emitted === 0 && reasoningBuf.trim()) {
+      yield reasoningBuf.trim();
+      emitted = reasoningBuf.length;
+    }
+    if (emitted > 0) return;
+  } catch (err) {
+    console.warn("[provider] Nemotron SSE stream failed — trying blocking call:", err instanceof Error ? err.message : err);
+  }
+
+  const { text } = await nemotron(messages, opts);
+  if (text) yield text;
+}
+
 /**
  * Remove <think>…</think> reasoning traces from a complete response. Handles
  * closed blocks, an unclosed trailing <think> (keeps text before it), and never
  * returns empty when there is non-think content present.
  */
 function stripThink(raw: string): string {
-  let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  let t = raw.replace(/<think>[\s\S]*?<\/redacted_thinking>/gi, "").trim();
   if (t) return t;
   // Unclosed <think> (e.g. cut off by max_tokens): keep any answer before it.
   t = raw.replace(/<think>[\s\S]*$/i, "").trim();
@@ -566,16 +824,17 @@ async function ollama(messages: ChatMessage[], opts: ChatOptions): Promise<ChatR
   const msgs = withReasoningDirective(messages, opts);
   const options: Record<string, unknown> = { temperature: opts.temperature ?? 0.3 };
   if (opts.maxTokens) options.num_predict = opts.maxTokens;
-  const res = await fetchJson<{ message: { content: string } }>(
+  const res = await fetchJson<{ message: { content?: string; reasoning?: string } }>(
     `${host}/api/chat`,
     {
       method: "POST",
-      timeoutMs: 180_000,
+      timeoutMs: nemotronTimeoutMs(),
       body: JSON.stringify({ model, messages: msgs, stream: false, options }),
     },
   );
   const raw = res.message?.content ?? "";
-  const text = stripThink(raw);
+  const reasoning = res.message?.reasoning ?? "";
+  const text = stripThink(raw) || reasoning.trim();
   if (!text.trim()) throw new Error("Ollama returned no visible answer");
   return { text, provider: "ollama", model };
 }
