@@ -2,6 +2,7 @@
 
 export interface Business {
   id: string;
+  isPublic?: boolean;
   name: string;
   businessType: string;
   address: string;
@@ -53,6 +54,7 @@ export interface CivicRecord {
   lon?: number;
   lat?: number;
   distanceM?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface CivicGroup {
@@ -120,6 +122,8 @@ export interface AgentAnswer {
   model: string;
   contextUsed: { name?: string; businessType?: string; radiusM: number; highlights: string[] };
 }
+
+export type AgentMode = "nemotron-ml" | "claude" | "ml";
 
 export type DemandLevel = "low" | "moderate" | "elevated" | "surge";
 
@@ -320,18 +324,103 @@ async function json<T>(res: Response): Promise<T> {
  */
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
+// ---- Session token (onboarding guardrail) ----
+const SESSION_KEY = "cityflow-session-token";
+const SESSION_HEADER = "x-cityflow-session";
+
+export function getSessionToken(): string | null {
+  try { return localStorage.getItem(SESSION_KEY); } catch { return null; }
+}
+export function setSessionToken(token: string): void {
+  try { localStorage.setItem(SESSION_KEY, token); } catch { /* storage disabled */ }
+}
+export function clearSessionToken(): void {
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* storage disabled */ }
+}
+
+/** Fires when the backend rejects our token (401) so the app can re-gate. */
+export const AUTH_EXPIRED_EVENT = "cityflow:auth-expired";
+
 /** Resolve an app-relative `/api/...` path against the configured backend origin. */
 export function apiUrl(path: string): string {
   return path.startsWith("/api") ? `${API_BASE}${path}` : path;
 }
 
-/** fetch() that targets the configured backend origin for `/api/...` paths. */
-function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(apiUrl(path), init);
+/**
+ * Build an SSE (EventSource) URL with the session token in the query string —
+ * EventSource can't send custom headers, so the backend also accepts `?token=`.
+ */
+export function apiStreamUrl(path: string): string {
+  const url = apiUrl(path);
+  const token = getSessionToken();
+  if (!token) return url;
+  return url + (url.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
+}
+
+/** fetch() that targets the backend origin and attaches the session token. */
+function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = getSessionToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set(SESSION_HEADER, token);
+  return fetch(apiUrl(path), { ...init, headers }).then((res) => {
+    // A 401 on a protected route means our token is gone/invalid — surface it
+    // so the shell can drop back to the onboarding gate.
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      clearSessionToken();
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    }
+    return res;
+  });
+}
+
+export interface Operator {
+  name: string;
+  email: string;
+}
+
+export interface RegisterInput {
+  operatorName: string;
+  operatorEmail: string;
+  acceptedTerms: boolean;
+  business: {
+    name: string;
+    businessType: string;
+    address: string;
+    headcount: number;
+    notes?: string;
+    opensAt?: number;
+    closesAt?: number;
+    eventRadiusKm?: number;
+    customersPerWorkerHour?: number;
+    hourlyWage?: number;
+    minStaff?: number;
+    maxStaffPerHour?: number;
+    allowedShiftLengths?: number[];
+  };
 }
 
 export const api = {
   health: () => apiFetch("/api/health").then(json<{ ok: boolean; provider: string }>),
+
+  /** Onboarding: create the business + mint a session token. */
+  register: async (input: RegisterInput): Promise<{ token: string; business: Business; operator: Operator }> => {
+    const res = await apiFetch("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await json<{ token: string; business: Business; operator: Operator }>(res);
+    setSessionToken(data.token);
+    return data;
+  },
+
+  /** Resume: validate the stored token on load. */
+  session: () => apiFetch("/api/auth/session").then(json<{ operator: Operator; business: Business | null; createdAt: string }>),
+
+  logout: async (): Promise<void> => {
+    try { await apiFetch("/api/auth/logout", { method: "POST" }); } catch { /* ignore */ }
+    clearSessionToken();
+  },
 
   listBusinesses: () => apiFetch("/api/businesses").then(json<Business[]>),
 
@@ -437,7 +526,7 @@ export const api = {
       json<{ status: string; note: string; data: Holiday[] }>,
     ),
 
-  agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number }) =>
+  agent: (body: { question: string; businessId?: string; lon?: number; lat?: number; radiusM?: number; providerMode?: AgentMode }) =>
     apiFetch("/api/agent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -450,8 +539,8 @@ export const api = {
    * Resolves when the stream closes.
    */
   agentStream: async (
-    body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean },
-    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; done?: boolean; error?: string }) => void,
+    body: { question: string; businessId: string; radiusM?: number; useGradient?: boolean; providerMode?: AgentMode },
+    onEvent: (e: { delta?: string; provider?: string; model?: string; gradientUsed?: boolean; mode?: AgentMode; done?: boolean; error?: string; reset?: boolean; fallback?: string }) => void,
   ): Promise<void> => {
     const res = await apiFetch("/api/agent/stream", {
       method: "POST",

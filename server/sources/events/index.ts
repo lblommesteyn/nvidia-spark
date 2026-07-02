@@ -18,10 +18,35 @@ import { loadWorldCupEvents } from "./worldcup.ts";
 import { loadTicketmasterEvents, ticketmasterEnabled } from "./ticketmaster.ts";
 import { loadPredictHqEvents, predicthqEnabled } from "./predicthq.ts";
 
+const now = Date.now();
 const DEMO_EVENTS: CivicRecord[] = [
-  { id: "event-demo-1", category: "event", title: "Blue Jays vs. Yankees", detail: "MLB · Rogers Centre", lon: -79.3894, lat: 43.6414, meta: { provider: "demo", kind: "sports" } },
-  { id: "event-demo-2", category: "event", title: "Concert — Budweiser Stage", detail: "Live music · Budweiser Stage", lon: -79.4155, lat: 43.6285, meta: { provider: "demo", kind: "concert/event" } },
-  { id: "event-demo-3", category: "event", title: "Toronto FC vs. Inter Miami", detail: "MLS · BMO Field", lon: -79.4185, lat: 43.6332, meta: { provider: "demo", kind: "sports" } },
+  {
+    id: "event-demo-1",
+    category: "event",
+    title: "Blue Jays vs. Yankees",
+    detail: "MLB · Rogers Centre",
+    lon: -79.3894,
+    lat: 43.6414,
+    meta: { provider: "demo", kind: "sports", start: new Date(now + 24 * 60 * 60 * 1000).toISOString(), venue: "Rogers Centre" },
+  },
+  {
+    id: "event-demo-2",
+    category: "event",
+    title: "Concert — Budweiser Stage",
+    detail: "Live music · Budweiser Stage",
+    lon: -79.4155,
+    lat: 43.6285,
+    meta: { provider: "demo", kind: "concert/event", start: new Date(now + 2 * 24 * 60 * 60 * 1000 + 20 * 60 * 60 * 1000).toISOString(), venue: "Budweiser Stage" },
+  },
+  {
+    id: "event-demo-3",
+    category: "event",
+    title: "Toronto FC vs. Inter Miami",
+    detail: "MLS · BMO Field",
+    lon: -79.4185,
+    lat: 43.6332,
+    meta: { provider: "demo", kind: "sports", start: new Date(now + 4 * 24 * 60 * 60 * 1000).toISOString(), venue: "BMO Field" },
+  },
 ];
 
 /** Drop events that share an identical title + start time across providers. */

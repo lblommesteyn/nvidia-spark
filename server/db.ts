@@ -31,6 +31,9 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS businesses (
     id            TEXT PRIMARY KEY,
+    owner_email   TEXT,
+    owner_name    TEXT,
+    is_public     INTEGER NOT NULL DEFAULT 0,
     name          TEXT NOT NULL,
     business_type TEXT NOT NULL,
     address       TEXT NOT NULL,
@@ -62,6 +65,9 @@ db.exec(`
     (db.prepare("PRAGMA table_info(businesses)").all() as { name: string }[]).map((r) => r.name),
   );
   const additions: Record<string, string> = {
+    owner_email: "TEXT",
+    owner_name: "TEXT",
+    is_public: "INTEGER NOT NULL DEFAULT 0",
     opens_at: "INTEGER",
     closes_at: "INTEGER",
     event_radius_km: "REAL",
@@ -89,6 +95,9 @@ interface Row {
   neighbourhood: string | null;
   headcount: number;
   notes: string | null;
+  owner_email: string | null;
+  owner_name: string | null;
+  is_public: number;
   opens_at: number | null;
   closes_at: number | null;
   event_radius_km: number | null;
@@ -135,6 +144,9 @@ function toProfile(r: Row): BusinessProfile {
     neighbourhood: r.neighbourhood ?? undefined,
     headcount: r.headcount,
     notes: r.notes ?? undefined,
+    ownerEmail: r.owner_email ?? undefined,
+    ownerName: r.owner_name ?? undefined,
+    isPublic: Boolean(r.is_public),
     opensAt: r.opens_at ?? undefined,
     closesAt: r.closes_at ?? undefined,
     eventRadiusKm: r.event_radius_km ?? undefined,
@@ -156,9 +168,33 @@ export type BusinessInput = Omit<
 >;
 
 export const businesses = {
-  list(): BusinessProfile[] {
-    return (db.prepare("SELECT * FROM businesses ORDER BY created_at DESC").all() as Row[]).map(
-      toProfile,
+  list(ownerEmail: string): BusinessProfile[] {
+    return (db.prepare(
+      `SELECT * FROM businesses
+       WHERE is_public = 1
+          OR owner_email = ?
+          OR id IN (
+            SELECT business_id FROM sessions
+            WHERE operator_email = ? AND business_id IS NOT NULL
+          )
+       ORDER BY is_public ASC, created_at DESC`,
+    ).all(ownerEmail, ownerEmail) as Row[]).map(toProfile);
+  },
+
+  owns(id: string, ownerEmail: string): boolean {
+    return (
+      db.prepare(
+        `SELECT 1 FROM businesses
+         WHERE id = ?
+           AND (
+            is_public = 1 OR
+             owner_email = ?
+             OR id IN (
+               SELECT business_id FROM sessions
+               WHERE operator_email = ? AND business_id IS NOT NULL
+             )
+           )`,
+      ).get(id, ownerEmail, ownerEmail) !== undefined
     );
   },
 
@@ -169,21 +205,24 @@ export const businesses = {
     return row ? toProfile(row) : undefined;
   },
 
-  create(input: BusinessInput): BusinessProfile {
+  create(input: BusinessInput, owner?: { email?: string; name?: string }): BusinessProfile {
     const id = randomUUID();
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO businesses
-        (id, name, business_type, address, lon, lat, ward, neighbourhood, headcount, notes,
+        (id, owner_email, owner_name, is_public, name, business_type, address, lon, lat, ward, neighbourhood, headcount, notes,
          opens_at, closes_at, event_radius_km, customers_per_worker_hour, hourly_wage,
          min_staff, max_staff_per_hour, allowed_shift_lengths, transit_relevance, nearby_routes,
          created_at, updated_at)
-       VALUES (@id, @name, @business_type, @address, @lon, @lat, @ward, @neighbourhood, @headcount, @notes,
+       VALUES (@id, @owner_email, @owner_name, @is_public, @name, @business_type, @address, @lon, @lat, @ward, @neighbourhood, @headcount, @notes,
          @opens_at, @closes_at, @event_radius_km, @customers_per_worker_hour, @hourly_wage,
          @min_staff, @max_staff_per_hour, @allowed_shift_lengths, @transit_relevance, @nearby_routes,
          @created_at, @updated_at)`,
     ).run({
       id,
+      owner_email: owner?.email ?? null,
+      owner_name: owner?.name ?? null,
+      is_public: 0,
       name: input.name,
       business_type: input.businessType,
       address: input.address,
@@ -217,6 +256,40 @@ export const businesses = {
     return db.prepare("DELETE FROM businesses WHERE id = ?").run(id).changes > 0;
   },
 };
+
+// Public demo business — accessible to every signed-in operator and used as a
+// safe default when someone has no personal businesses yet.
+db.prepare(
+  `INSERT OR IGNORE INTO businesses
+    (id, owner_email, owner_name, is_public, name, business_type, address, lon, lat, ward, neighbourhood, headcount, notes,
+     opens_at, closes_at, event_radius_km, customers_per_worker_hour, hourly_wage, min_staff, max_staff_per_hour,
+     allowed_shift_lengths, transit_relevance, nearby_routes, created_at, updated_at)
+   VALUES
+    (?, NULL, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+).run(
+  "demo-store-city-hall",
+  "Toronto Demo Store",
+  "retail store",
+  "100 Queen St W, Toronto, ON",
+  -79.3839,
+  43.6535,
+  "Toronto Centre",
+  "Downtown",
+  3,
+  "Public demo business for any session.",
+  9,
+  21,
+  1.5,
+  12,
+  18,
+  1,
+  4,
+  JSON.stringify([4, 6, 8]),
+  "high",
+  JSON.stringify(["TTC Subway", "Queen Streetcar"]),
+  new Date().toISOString(),
+  new Date().toISOString(),
+);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS business_history (
@@ -443,6 +516,118 @@ export const businessResearch = {
     ).run(businessId, now, error);
   },
 };
+
+// ---- Auth sessions (public-hosting guardrail) ------------------------------
+// A session is minted after an operator completes the onboarding form. The
+// opaque token gates the API + terminal and is the key used for per-user rate
+// limiting. Persisted so sessions survive a server restart.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    token         TEXT PRIMARY KEY,
+    business_id   TEXT REFERENCES businesses(id) ON DELETE SET NULL,
+    operator_name TEXT NOT NULL,
+    operator_email TEXT NOT NULL,
+    company       TEXT,
+    created_at    TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(operator_email);
+`);
+
+interface SessionRow {
+  token: string;
+  business_id: string | null;
+  operator_name: string;
+  operator_email: string;
+  company: string | null;
+  created_at: string;
+  last_seen_at: string;
+}
+
+export interface SessionRecord {
+  token: string;
+  businessId: string | null;
+  operatorName: string;
+  operatorEmail: string;
+  company?: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+function toSession(r: SessionRow): SessionRecord {
+  return {
+    token: r.token,
+    businessId: r.business_id,
+    operatorName: r.operator_name,
+    operatorEmail: r.operator_email,
+    company: r.company ?? undefined,
+    createdAt: r.created_at,
+    lastSeenAt: r.last_seen_at,
+  };
+}
+
+export const sessions = {
+  create(input: {
+    token: string;
+    businessId: string | null;
+    operatorName: string;
+    operatorEmail: string;
+    company?: string;
+  }): SessionRecord {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO sessions (token, business_id, operator_name, operator_email, company, created_at, last_seen_at)
+       VALUES (@token, @business_id, @operator_name, @operator_email, @company, @created_at, @last_seen_at)`,
+    ).run({
+      token: input.token,
+      business_id: input.businessId,
+      operator_name: input.operatorName,
+      operator_email: input.operatorEmail,
+      company: input.company ?? null,
+      created_at: now,
+      last_seen_at: now,
+    });
+    return this.get(input.token)!;
+  },
+
+  get(token: string): SessionRecord | undefined {
+    const row = db.prepare("SELECT * FROM sessions WHERE token = ?").get(token) as SessionRow | undefined;
+    return row ? toSession(row) : undefined;
+  },
+
+  touch(token: string): void {
+    db.prepare("UPDATE sessions SET last_seen_at = ? WHERE token = ?").run(new Date().toISOString(), token);
+  },
+
+  /** Count sessions created by an email since a cutoff — abuse throttle. */
+  countByEmailSince(email: string, sinceIso: string): number {
+    return (
+      db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE operator_email = ? AND created_at >= ?").get(email, sinceIso) as {
+        n: number;
+      }
+    ).n;
+  },
+
+  remove(token: string): boolean {
+    return db.prepare("DELETE FROM sessions WHERE token = ?").run(token).changes > 0;
+  },
+};
+
+// Backfill ownership from historic session rows so previously created businesses
+// remain visible to their operator after the app starts scoping by owner.
+db.exec(`
+  UPDATE businesses
+  SET
+    owner_email = COALESCE(
+      owner_email,
+      (SELECT operator_email FROM sessions WHERE sessions.business_id = businesses.id ORDER BY created_at DESC LIMIT 1)
+    ),
+    owner_name = COALESCE(
+      owner_name,
+      (SELECT operator_name FROM sessions WHERE sessions.business_id = businesses.id ORDER BY created_at DESC LIMIT 1)
+    )
+  WHERE owner_email IS NULL OR owner_name IS NULL;
+`);
 
 export const snapshots = {
   insert(row: SnapshotInsert): void {

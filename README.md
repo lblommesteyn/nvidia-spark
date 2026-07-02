@@ -103,6 +103,9 @@ cp .env.example .env
 ```
 
 Provider priority for the LLM: **Nemotron → OpenAI → Anthropic → Ollama → mock**.
+In the agent UI you can also pick **Nemotron + ML** or **Claude** explicitly;
+the backend will use the matching configured provider and still fall back if
+that endpoint is unavailable.
 
 ### Minimal `.env` for the GPU demo (Nemotron on the DGX/GX10 via Ollama)
 

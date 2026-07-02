@@ -1,11 +1,16 @@
-import { buildContext, scopeFromBusiness, type LocationContext } from "./context.ts";
-import { chat, type ChatMessage, type ChatOptions, type ChatResult } from "./provider.ts";
+import { type LocationContext } from "./context.ts";
+import {
+  chat,
+  warmNemotron,
+  type ChatMessage,
+  type ChatOptions,
+  type ChatResult,
+  type PreferredProvider,
+} from "./provider.ts";
 import { findSimilarMoments, historicalPatternBlock } from "./patterns.ts";
-import { businessHistoryBlock } from "./bizdata.ts";
-import { weekForecastForBusiness } from "./forecast.ts";
-import { getResearchBlock } from "./web-agent.ts";
-import { mlWeeklyProfile } from "./mlforecast.ts";
-import { businesses, businessHistory, businessSchedule } from "../db.ts";
+import { loadAgentContextBundle } from "./agent-cache.ts";
+import { mlWeeklyProfile, type MLWeeklyProfile } from "./mlforecast.ts";
+import { businesses } from "../db.ts";
 import type { BusinessProfile } from "../types.ts";
 
 export interface AgentAnswer extends ChatResult {
@@ -24,18 +29,12 @@ export interface AgentRequest {
   contextUsed: AgentAnswer["contextUsed"];
 }
 
-function weekForecastBlock(businessId: string, week: Awaited<ReturnType<typeof weekForecastForBusiness>>): string {
-  const dayLines = week.days
-    .slice(0, 7)
-    .map((d) => `  ${d.dayName} (${d.date}): peak ${d.peakWindow} [${d.peakLevel}], avg ${d.avgLevel}${d.events ? `, ${d.events} events` : ""}`);
-  return [
-    "<WEEK_FORECAST>",
-    week.headline,
-    ...dayLines,
-    `Basis: ${week.basis}`,
-    "</WEEK_FORECAST>",
-  ].join("\n");
-}
+export type AgentMode = "nemotron-ml" | "claude" | "ml";
+
+/** Fewer civic rows + patterns → smaller prompts, faster inference. */
+const CIVIC_ROWS = 4;
+const PATTERN_COUNT = 5;
+const HIGHLIGHT_ROWS = 8;
 
 function systemPrompt(
   ctx: LocationContext,
@@ -51,20 +50,22 @@ function systemPrompt(
     .filter((g) => g.nearby.length > 0)
     .map((g) => {
       const items = g.nearby
-        .slice(0, 8)
+        .slice(0, CIVIC_ROWS)
         .map((r) => `  - ${r.title}${r.detail ? ` (${r.detail})` : ""}${r.distanceM != null ? ` ~${r.distanceM}m` : ""}`)
         .join("\n");
       return `${g.label} [${g.status}]:\n${items}`;
     })
     .join("\n\n");
 
-  const patterns = findSimilarMoments(ctx, 12);
+  const patterns = findSimilarMoments(ctx, PATTERN_COUNT);
   const patternBlock = historicalPatternBlock(patterns);
 
   const n = ctx.now;
   const nowBlock =
     `<NOW>It is ${n.weekday} ${n.date}, ${n.time} Toronto time — ${n.partOfDay}, ${n.season}, ${n.isWeekend ? "weekend" : "weekday"}. ` +
     `Anchor every recommendation to this moment: distinguish "right now / next few hours" from "later today", "tonight", and "this week".</NOW>`;
+
+  const highlights = ctx.highlights.slice(0, HIGHLIGHT_ROWS);
 
   return [
     "You are a custom local-intelligence agent for a Toronto small-business owner.",
@@ -85,6 +86,7 @@ function systemPrompt(
     "    Explicitly flag over-staffing: 'Tuesday afternoon is historically slow — you may be over-scheduled.'",
     "  - When the owner asks about revenue or customers, use their actual numbers, not generic estimates.",
     "If data is marked [demo], note it may be placeholder. Cite distances when relevant.",
+    "Format the answer so it is easy to skim: a short headline, then concise bullets, then an action or recommendation line.",
     "",
     nowBlock,
     profileBlock,
@@ -92,7 +94,7 @@ function systemPrompt(
     extras.weekBlock ?? "",
     extras.mlBlock ?? "",
     bizHistoryBlock,
-    `<HIGHLIGHTS>\n${ctx.highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
+    `<HIGHLIGHTS>\n${highlights.map((h) => `- ${h}`).join("\n")}\n</HIGHLIGHTS>`,
     "",
     patternBlock,
     "",
@@ -104,75 +106,43 @@ function systemPrompt(
   ].filter(Boolean).join("\n");
 }
 
-const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function buildMlBlock(
-  businessType: string,
-  grid: number[][],
-  model: string,
-  archetype: string,
-): string {
-  const DOW = DOW_LABELS;
-  const flat = grid.flat();
-  const max = Math.max(...flat, 1);
-  // Show peak hour per day
-  const dayLines = grid.map((row, d) => {
-    const peakH = row.indexOf(Math.max(...row));
-    const peakV = Math.round(row[peakH]);
-    const avgV  = Math.round(row.reduce((a, b) => a + b, 0) / 24);
-    return `  ${DOW[d]}: peak ${String(peakH).padStart(2, "0")}:00 (~${peakV} customers), avg ~${avgV}/hr`;
-  });
-  return [
-    `<ML_DEMAND_MODEL model="${model}" archetype="${archetype}" business_type="${businessType}">`,
-    "Predicted customer counts from CityFlow gradient-boosting model (trained on Toronto demand simulation).",
-    "Use this to anchor staffing and timing recommendations to data-driven peaks, not just intuition.",
-    ...dayLines,
-    `Peak fraction of max: this hour vs ${Math.round(max)} peak customers.`,
-    "</ML_DEMAND_MODEL>",
-  ].join("\n");
-}
-
 export async function buildBusinessAgentRequest(
   businessId: string,
   question: string,
   radiusM = 750,
-  opts: { useGradient?: boolean } = {},
+  opts: { useGradient?: boolean; preferredProvider?: PreferredProvider } = {},
 ): Promise<AgentRequest> {
   const useGradient = opts.useGradient ?? true;
   const business = businesses.get(businessId);
   if (!business) throw new Error("business not found");
-  const scope = scopeFromBusiness(business, radiusM);
-  const [ctx, week, mlProfile] = await Promise.all([
-    buildContext(scope),
-    weekForecastForBusiness(businessId, radiusM),
-    // Only consult the gradient demand model when the user opts into it.
-    useGradient ? mlWeeklyProfile(business.businessType).catch(() => null) : Promise.resolve(null),
-  ]);
 
-  // Pull business's own history + upcoming schedule for the agent
-  const summary   = businessHistory.summary(businessId);
-  const upcoming  = businessSchedule.upcoming(businessId, 7);
-  const histBlock = businessHistoryBlock(businessId, business.businessType, summary, upcoming);
-  const researchBlock = getResearchBlock(businessId);
-  const weekBlock = weekForecastBlock(businessId, week);
-  const mlBlock =
-    useGradient && mlProfile
-      ? buildMlBlock(business.businessType, mlProfile.grid, mlProfile.model, mlProfile.archetype) +
-        "\nGROUND your staffing/timing numbers in the ML_DEMAND_MODEL above when it is present."
+  const { ctx, researchBlock, weekBlock, mlBlock, histBlock, gradientUsed } =
+    await loadAgentContextBundle(business, radiusM, useGradient);
+
+  const mlBlockWithHint =
+    mlBlock
+      ? `${mlBlock}\nGROUND your staffing/timing numbers in the ML_DEMAND_MODEL above when it is present.`
       : "";
 
   return {
     messages: [
-      { role: "system", content: systemPrompt(ctx, business, histBlock, { researchBlock, weekBlock, mlBlock }) },
+      {
+        role: "system",
+        content: systemPrompt(ctx, business, histBlock, {
+          researchBlock,
+          weekBlock,
+          mlBlock: mlBlockWithHint,
+        }),
+      },
       { role: "user", content: question },
     ],
     opts: { reasoning: false, maxTokens: 1536 },
-    gradientUsed: useGradient && !!mlProfile,
+    gradientUsed,
     contextUsed: {
       name: business.name,
       businessType: business.businessType,
       radiusM,
-      highlights: ctx.highlights,
+      highlights: ctx.highlights.slice(0, HIGHLIGHT_ROWS),
     },
   };
 }
@@ -181,10 +151,86 @@ export async function askForBusiness(
   businessId: string,
   question: string,
   radiusM = 750,
+  opts: { useGradient?: boolean; preferredProvider?: PreferredProvider } = {},
 ): Promise<AgentAnswer> {
-  const { messages, opts, contextUsed } = await buildBusinessAgentRequest(businessId, question, radiusM);
-  const result = await chat(messages, opts);
+  const preferred = opts.preferredProvider;
+  if (preferred === "nemotron") await warmNemotron();
+  const { messages, opts: chatOpts, contextUsed } = await buildBusinessAgentRequest(
+    businessId,
+    question,
+    radiusM,
+    opts,
+  );
+  const result = await chat(messages, chatOpts, preferred, true);
   return { ...result, contextUsed };
+}
+
+const DOW_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** Current Toronto hour (0-23) and ML day-of-week (Mon=0..Sun=6). */
+function torontoNow(): { hour: number; mlDow: number } {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-CA", { hour: "numeric", hour12: false, timeZone: "America/Toronto" }).format(new Date()),
+  ) % 24;
+  const jsDay = new Date(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(new Date()),
+  ).getDay();
+  return { hour, mlDow: (jsDay + 6) % 7 };
+}
+
+/** Format the raw ML demand grid into a readable answer — no LLM interpretation. */
+function formatMlOnlyAnswer(business: BusinessProfile, profile: MLWeeklyProfile): string {
+  const { grid, model, archetype } = profile;
+  const peakMax = Math.max(...grid.flat(), 1);
+  const { hour, mlDow } = torontoNow();
+  const todayRow = grid[mlDow] ?? [];
+  const pct = (v: number) => Math.round((v / peakMax) * 100);
+
+  const nowVal = Math.round(todayRow[hour] ?? 0);
+  const todayPeakH = todayRow.length ? todayRow.indexOf(Math.max(...todayRow)) : 0;
+  const todayPeakV = Math.round(todayRow[todayPeakH] ?? 0);
+
+  const nextHours: string[] = [];
+  for (let h = hour; h < Math.min(hour + 6, 24); h++) {
+    const v = todayRow[h] ?? 0;
+    nextHours.push(`  ${String(h).padStart(2, "0")}:00 — ~${Math.round(v)} customers/hr (${pct(v)}% of peak)`);
+  }
+
+  const weekLines = grid.map((row, d) => {
+    const ph = row.indexOf(Math.max(...row));
+    const pv = Math.round(row[ph] ?? 0);
+    const avg = Math.round(row.reduce((a, b) => a + b, 0) / 24);
+    return `  ${DOW_FULL[d]}: peak ${String(ph).padStart(2, "0")}:00 (~${pv}/hr), avg ~${avg}/hr${d === mlDow ? "  ← today" : ""}`;
+  });
+
+  return [
+    `CityFlow ML demand model — ${business.businessType} (${archetype} archetype, ${model === "ml" ? "gradient-boosting" : "heuristic"} model)`,
+    "",
+    `Right now (${DOW_FULL[mlDow]} ${String(hour).padStart(2, "0")}:00): ~${nowVal} customers/hr — ${pct(todayRow[hour] ?? 0)}% of the weekly peak (${Math.round(peakMax)}/hr).`,
+    `Today's peak: ${String(todayPeakH).padStart(2, "0")}:00 (~${todayPeakV} customers/hr).`,
+    "",
+    "Next hours today:",
+    ...nextHours,
+    "",
+    "Weekly demand peaks:",
+    ...weekLines,
+    "",
+    "Raw ML forecast — no language-model interpretation applied.",
+  ].join("\n");
+}
+
+/** ML-only answer: the raw gradient demand model, bypassing every LLM. */
+export async function mlOnlyAnswer(businessId: string, radiusM = 750): Promise<AgentAnswer> {
+  const business = businesses.get(businessId);
+  if (!business) throw new Error("business not found");
+  const profile = await mlWeeklyProfile(business.businessType).catch(() => null);
+  if (!profile) throw new Error("ML demand model unavailable");
+  return {
+    text: formatMlOnlyAnswer(business, profile),
+    provider: "ml",
+    model: `cityflow-${profile.model}`,
+    contextUsed: { name: business.name, businessType: business.businessType, radiusM, highlights: [] },
+  };
 }
 
 export async function askForPoint(
@@ -194,6 +240,7 @@ export async function askForPoint(
   opts: { radiusM?: number; businessType?: string } = {},
 ): Promise<AgentAnswer> {
   const radiusM = opts.radiusM ?? 750;
+  const { buildContext } = await import("./context.ts");
   const ctx = await buildContext({ point: { lon, lat }, radiusM, businessType: opts.businessType });
   const result = await chat([
     { role: "system", content: systemPrompt(ctx) },
@@ -201,6 +248,6 @@ export async function askForPoint(
   ]);
   return {
     ...result,
-    contextUsed: { businessType: opts.businessType, radiusM, highlights: ctx.highlights },
+    contextUsed: { businessType: opts.businessType, radiusM, highlights: ctx.highlights.slice(0, HIGHLIGHT_ROWS) },
   };
 }

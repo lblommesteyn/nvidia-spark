@@ -69,8 +69,8 @@ export function DashboardGrid({ tiles, storageKey = "tomon-grid-layout" }: Props
       const grid = GridStack.init(
         {
           column: 12,
-          cellHeight: 96,
-          margin: 7,
+          cellHeight: 88,
+          margin: 2,
           float: false,
           handle: ".panel-header",
           resizable: { handles: "e, se, s, sw, w" },

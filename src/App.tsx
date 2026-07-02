@@ -59,6 +59,123 @@ const SIGNAL_LABEL: Record<string, string> = {
 };
 
 /**
+ * Civic sources whose live data comes from paid, proprietary APIs (Ticketmaster
+ * / PredictHQ for events, aviationstack for flights). Flagged with a ★ so it
+ * reads as a premium feature of the app. Traffic (TomTom) is flagged in the
+ * map layer selector since it's a map layer, not a Data Sources row.
+ */
+const PREMIUM_SOURCES = new Set(["events", "flights"]);
+
+const TORONTO_TZ = "America/Toronto";
+const EVENT_DAY_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TORONTO_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const EVENT_MONTH_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TORONTO_TZ,
+  month: "long",
+  year: "numeric",
+});
+const EVENT_WEEKDAY_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TORONTO_TZ,
+  weekday: "short",
+});
+const EVENT_LABEL_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TORONTO_TZ,
+  month: "short",
+  day: "numeric",
+});
+const EVENT_TIME_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TORONTO_TZ,
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+interface CalendarEventItem {
+  title: string;
+  time: string;
+  source: string;
+  venue?: string;
+}
+
+interface CalendarDay {
+  key: string;
+  label: string;
+  weekday: string;
+  isToday: boolean;
+  events: CalendarEventItem[];
+}
+
+function torontoDateParts(date: Date): { year: number; month: number; day: number } {
+  const parts = EVENT_DAY_FMT.formatToParts(date);
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+  };
+}
+
+function torontoDateKey(date: Date): string {
+  const { year, month, day } = torontoDateParts(date);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function startOfTorontoDay(date = new Date()): Date {
+  const { year, month, day } = torontoDateParts(date);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function eventStart(record: CivicRecord): Date | null {
+  const raw = typeof record.meta?.start === "string" ? record.meta.start : null;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function buildEventCalendar(records: CivicRecord[]): { monthLabel: string; days: CalendarDay[] } {
+  const grouped = new Map<string, CalendarEventItem[]>();
+  for (const record of records) {
+    const start = eventStart(record);
+    if (!start) continue;
+    const key = torontoDateKey(start);
+    const item: CalendarEventItem = {
+      title: record.title,
+      time: EVENT_TIME_FMT.format(start),
+      source: String(record.meta?.provider ?? "event"),
+      venue: typeof record.meta?.venue === "string" ? record.meta.venue : undefined,
+    };
+    const list = grouped.get(key) ?? [];
+    list.push(item);
+    grouped.set(key, list);
+  }
+
+  for (const list of grouped.values()) {
+    list.sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
+  }
+
+  const today = startOfTorontoDay();
+  const days: CalendarDay[] = Array.from({ length: 28 }, (_, i) => {
+    const day = new Date(today.getTime() + i * 86_400_000);
+    const key = torontoDateKey(day);
+    return {
+      key,
+      label: EVENT_LABEL_FMT.format(day),
+      weekday: EVENT_WEEKDAY_FMT.format(day),
+      isToday: i === 0,
+      events: grouped.get(key) ?? [],
+    };
+  });
+
+  return {
+    monthLabel: EVENT_MONTH_FMT.format(today),
+    days,
+  };
+}
+
+/**
  * Honest, branded label for the active intelligence stack. The CityFlow
  * gradient-boosting demand model is always part of the stack; the LLM half
  * varies by provider, so the local-GPU path proudly names Nemotron while the
@@ -161,6 +278,7 @@ export function App() {
 
   const eventGroup = context?.civic.find((g) => g.category === "event") ?? null;
   const otherCivic = context?.civic.filter((g) => g.category !== "event") ?? [];
+  const eventCalendar = eventGroup ? buildEventCalendar(eventGroup.nearby) : null;
 
   function onCreated(b: Business) {
     setBusinesses((prev) => [b, ...prev]);
@@ -367,11 +485,12 @@ export function App() {
       x: 0,
       y: 19,
       w: 6,
-      h: 5,
+      h: 10,
       content: (
         <Panel
           title="Upcoming Events, Games & Concerts"
           status={eventGroup?.status ?? "loading"}
+          premium
           description="Soonest first: stadium games, concerts & big events that pull crowds nearby — pro sports + FIFA World Cup 2026 (ESPN, live), plus Ticketmaster & PredictHQ when keys are set. Upcoming Ontario stat holidays shown too."
           count={eventGroup?.nearby.length}
           updatedAt={eventGroup?.fetchedAt}
@@ -380,7 +499,7 @@ export function App() {
         >
           {!eventGroup ? (
             <div class="muted">Loading…</div>
-          ) : eventGroup.nearby.length === 0 ? (
+          ) : !eventCalendar || eventCalendar.days.every((d) => d.events.length === 0) ? (
             <div class="muted">No events found nearby right now.</div>
           ) : (
             <>
@@ -398,15 +517,43 @@ export function App() {
                   ))}
                 </div>
               )}
-              <ul class="list">
-                {eventGroup.nearby.slice(0, 12).map((r) => (
-                  <li key={r.id}>
-                    <strong>{r.title}</strong>
-                    {r.detail && <span class="muted"> — {r.detail}</span>}
-                    {r.distanceM != null && <span class="dist">{r.distanceM}m</span>}
-                  </li>
-                ))}
-              </ul>
+              <div class="events-calendar">
+                <div class="events-calendar-head">
+                  <span class="events-calendar-month">{eventCalendar.monthLabel}</span>
+                  <span class="muted">
+                    {eventGroup.nearby.length} upcoming / {eventCalendar.days.reduce((n, d) => n + d.events.length, 0)} dated
+                  </span>
+                </div>
+                <div class="events-calendar-weekdays">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+                    <span key={d}>{d}</span>
+                  ))}
+                </div>
+                <div class="events-calendar-grid">
+                  {eventCalendar.days.map((day) => (
+                    <div key={day.key} class={`events-calendar-day${day.isToday ? " is-today" : ""}${day.events.length ? " has-events" : ""}`}>
+                      <div class="events-calendar-day-top">
+                        <strong>{day.label}</strong>
+                        <span class="events-calendar-weekday">{day.weekday}</span>
+                        {day.events.length > 0 && <span class="events-calendar-count">{day.events.length}</span>}
+                      </div>
+                      <div class="events-calendar-events">
+                        {day.events.slice(0, 2).map((ev) => (
+                          <div
+                            key={`${day.key}-${ev.title}-${ev.time}`}
+                            class="events-calendar-event"
+                            title={`${ev.time}${ev.venue ? ` · ${ev.venue}` : ""}`}
+                          >
+                            <span class="events-calendar-time">{ev.time}</span>
+                            <span class="events-calendar-title">{ev.title}</span>
+                          </div>
+                        ))}
+                        {day.events.length > 2 && <div class="events-calendar-more">+{day.events.length - 2} more</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </>
           )}
         </Panel>
@@ -417,11 +564,12 @@ export function App() {
       x: 6,
       y: 19,
       w: 6,
-      h: 5,
+      h: 10,
       content: (
         <Panel
           title="Data Sources"
           status={context ? "live" : "loading"}
+          premium
           description="Provenance of every feed powering this dashboard. LIVE = real city/open data. Each row links to its source."
           count={totalSources}
           dataHref={`/api/context?${ctxQuery}`}
@@ -441,6 +589,9 @@ export function App() {
               {context.civic.map((g) => (
                 <li key={g.source}>
                   <strong>{CATEGORY_LABEL[g.category]}</strong>
+                  {PREMIUM_SOURCES.has(g.source) && (
+                    <span class="premium-star" title="Premium data — powered by a paid, proprietary API">★</span>
+                  )}
                   {g.url ? (
                     <a class="src-link" href={g.url} target="_blank" rel="noopener noreferrer" title={g.attribution ?? g.label}>{g.label} ↗</a>
                   ) : (
@@ -457,7 +608,7 @@ export function App() {
     {
       id: "weather",
       x: 0,
-      y: 24,
+      y: 30,
       w: 3,
       h: 3,
       content: (
@@ -483,7 +634,7 @@ export function App() {
     {
       id: "airquality",
       x: 3,
-      y: 24,
+      y: 30,
       w: 3,
       h: 3,
       content: (
@@ -509,7 +660,7 @@ export function App() {
     ...otherCivic.map<GridTile>((g, i) => ({
       id: `civic-${g.source}`,
       x: ((i + 2) % 4) * 3,
-      y: 24 + Math.floor((i + 2) / 4) * 3,
+      y: 30 + Math.floor((i + 2) / 4) * 3,
       w: 3,
       h: 3,
       content: (
@@ -563,12 +714,16 @@ export function App() {
               onChange={(e) => setSelectedId((e.target as HTMLSelectElement).value)}
             >
               {businesses.map((b) => (
-                <option key={b.id} value={b.id}>{b.name} — {b.businessType}</option>
+                <option key={b.id} value={b.id}>
+                  {b.isPublic ? "★ " : ""}
+                  {b.name} — {b.businessType}
+                </option>
               ))}
             </select>
           )}
           <button class="btn-ghost" title="Reset tile layout" onClick={() => resetDashboardLayout()}>⟲ Layout</button>
           <button class="btn-primary" onClick={() => setShowSetup(true)}>+ Business</button>
+          <button class="btn-ghost" title="Sign out of this session" onClick={async () => { await api.logout(); window.location.assign("/app"); }}>Sign out</button>
           <button class="btn-ghost" title="Close terminal" data-close-terminal onClick={() => {
             document.getElementById("terminal-app")?.setAttribute("aria-hidden", "true");
             document.body.classList.remove("terminal-open");

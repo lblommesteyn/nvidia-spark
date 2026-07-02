@@ -14,15 +14,23 @@ type LayerKey = "flow" | "traffic" | "construction" | "bikeshare" | "transit" | 
 const DEFAULT_PITCH = 50;
 const DEFAULT_BEARING = -18;
 
-const LAYER_META: { key: LayerKey; label: string }[] = [
+const LAYER_META: { key: LayerKey; label: string; premium?: string }[] = [
   { key: "flow", label: "Flow areas" },
-  { key: "traffic", label: "Traffic" },
+  {
+    key: "traffic",
+    label: "Traffic",
+    premium: "Live road speeds from TomTom Traffic — requires a TomTom API key.",
+  },
   { key: "routes", label: "Transit lines (TTC · GO)" },
   { key: "gotrains", label: "GO Trains (simulated)" },
   { key: "construction", label: "Construction" },
   { key: "bikeshare", label: "Bike share" },
   { key: "transit", label: "TTC vehicles" },
-  { key: "places", label: "Events · Parking · Flights" },
+  {
+    key: "places",
+    label: "Events · Parking · Flights",
+    premium: "Events and flights can include Ticketmaster, PredictHQ, and aviationstack data — requires API keys.",
+  },
 ];
 
 export function TorontoMap({ home }: Props) {
@@ -616,7 +624,7 @@ export function TorontoMap({ home }: Props) {
       <div class="layer-toggle">
         <div class="layer-toggle-title">Layers</div>
         {LAYER_META.map((l) => (
-          <label key={l.key} class="layer-row">
+          <label key={l.key} class="layer-row" title={l.premium}>
             <input
               type="checkbox"
               checked={visible[l.key]}
@@ -625,6 +633,7 @@ export function TorontoMap({ home }: Props) {
               }
             />
             {l.label}
+            {l.premium && <span class="premium-star" aria-hidden="true">★</span>}
           </label>
         ))}
         <div class="layer-stats">

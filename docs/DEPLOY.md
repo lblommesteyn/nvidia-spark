@@ -1,8 +1,8 @@
 # Deploying CityFlow (no GPU / no DGX)
 
-This hosts the app entirely in the cloud, with a **hosted Anthropic** LLM
-(instead of a local Nemotron) and your teammate's **CityFlow ML** model running
-as its own service.
+This hosts the app entirely in the cloud, with a provider switch in the agent:
+**Nemotron + CityFlow ML** by default, or **Claude** if you pick it in the
+dropdown. Your teammate's **CityFlow ML** model still runs as its own service.
 
 ```
   Vercel                Railway                       Railway
@@ -48,8 +48,9 @@ curl https://cityflow-ml.up.railway.app/health
 
 ## 2. Backend (Hono API) → Railway
 
-API-only (the frontend is on Vercel). Needs the ML URL + Anthropic key, and a
-volume so the SQLite business store persists across restarts.
+API-only (the frontend is on Vercel). Needs the ML URL plus the LLM env vars
+for the provider(s) you want exposed, and a volume so the SQLite business store
+persists across restarts.
 
 ```bash
 railway up \
@@ -62,9 +63,12 @@ In the Railway dashboard for **cityflow-api**:
 1. **Variables** → add:
    | Key | Value |
    |---|---|
+   | `ML_URL` | `https://cityflow-ml.up.railway.app` (from step 1) |
+   | `NEMOTRON_BASE_URL` | `https://benefit-managers-plain-muscle.trycloudflare.com/v1` (your teammate's endpoint) |
+   | `NEMOTRON_MODEL` | `nemotron-3-nano:30b` (or the model exposed by that endpoint) |
+   | `NEMOTRON_API_KEY` | optional, only if that endpoint requires auth |
    | `ANTHROPIC_API_KEY` | `sk-ant-...` |
    | `ANTHROPIC_MODEL` | `claude-3-5-sonnet-latest` (optional) |
-   | `ML_URL` | `https://cityflow-ml.up.railway.app` (from step 1) |
    | `CORS_ORIGIN` | `*` for now (lock to the Vercel URL after step 3) |
 2. **Settings → Networking → Generate Domain** → copy it, e.g.
    `https://cityflow-api.up.railway.app`.

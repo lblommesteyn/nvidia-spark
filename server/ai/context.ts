@@ -5,7 +5,7 @@ import {
   sourceUrl,
   type CivicSourceDef,
 } from "../sources/civic.ts";
-import { getAirQuality, getWeather, type AirQualityNow, type WeatherNow } from "../sources/environment.ts";
+import { getAirQuality, getWeather, weatherFallbackData, type AirQualityNow, type WeatherNow } from "../sources/environment.ts";
 import { nowIso } from "../cache.ts";
 import type {
   BusinessProfile,
@@ -127,6 +127,9 @@ export function temporalContext(at: Date = new Date()): TemporalContext {
  * the dashboard renders fast and that tile fills in on the next poll.
  */
 const SOURCE_DEADLINE_MS = 3500;
+// Weather is a headline signal and Open-Meteo is fast; give it a longer budget
+// so a cold-start (or slightly slow) fetch returns real data, not a placeholder.
+const WEATHER_DEADLINE_MS = 8000;
 
 function withDeadline<T>(p: Promise<T>, ms: number, fallback: () => T): Promise<T> {
   return new Promise<T>((resolve) => {
@@ -142,13 +145,13 @@ function withDeadline<T>(p: Promise<T>, ms: number, fallback: () => T): Promise<
   });
 }
 
-function weatherFallback(): SourceResult<WeatherNow> {
+function weatherFallback(point?: GeoPoint): SourceResult<WeatherNow> {
   return {
     source: "weather",
     status: "demo",
     fetchedAt: nowIso(),
-    note: "source slow — showing placeholder; refreshes shortly",
-    data: { temperatureC: -3, feelsLikeC: -9, windKph: 22, humidity: 71, description: "Light snow", isDay: true },
+    note: "source slow — showing latest/seasonal estimate; refreshes shortly",
+    data: weatherFallbackData(point),
   };
 }
 
@@ -180,7 +183,7 @@ function civicFallback(def: CivicSourceDef): SourceResult<CivicRecord[]> {
  */
 export async function buildContext(scope: ContextScope): Promise<LocationContext> {
   const [weather, airQuality, ...civicResults] = await Promise.all([
-    withDeadline(getWeather(scope.point), SOURCE_DEADLINE_MS, weatherFallback),
+    withDeadline(getWeather(scope.point), WEATHER_DEADLINE_MS, () => weatherFallback(scope.point)),
     withDeadline(getAirQuality(scope.point), SOURCE_DEADLINE_MS, airQualityFallback),
     ...CIVIC_SOURCES.map((def) =>
       withDeadline(loadCivicSource(def), SOURCE_DEADLINE_MS, () => civicFallback(def)),

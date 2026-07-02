@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, type Business } from "../services/api";
+import { api, type AgentMode, type Business } from "../services/api";
 import { Markdown } from "./Markdown";
 
 interface Msg {
@@ -106,7 +106,8 @@ export function AgentChat({ business }: { business: Business }) {
   const [manageOpen, setManageOpen]       = useState(false);
   const [genBusy, setGenBusy]       = useState(false);
   const [genMsg, setGenMsg]         = useState<string | null>(null);
-  const [useGradient, setUseGradient] = useState(true);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [agentMode, setAgentMode] = useState<AgentMode>("nemotron-ml");
   const scrollRef    = useRef<HTMLDivElement>(null);
   const histRef      = useRef<HTMLInputElement>(null);
   const schedRef     = useRef<HTMLInputElement>(null);
@@ -235,6 +236,7 @@ export function AgentChat({ business }: { business: Business }) {
 
   async function ask(question: string) {
     if (!question.trim() || busy) return;
+    setAgentError(null);
     setInput("");
     streamBuf.current = "";
     setMessages((m) => [...m, { role: "user", text: question }, { role: "agent", text: "", streaming: true }]);
@@ -249,15 +251,25 @@ export function AgentChat({ business }: { business: Business }) {
       ));
 
     try {
-      await api.agentStream({ businessId: business.id, question, useGradient }, (e) => {
+      await api.agentStream({
+        businessId: business.id,
+        question,
+        useGradient: agentMode === "nemotron-ml",
+        providerMode: agentMode,
+      }, (e) => {
         if (e.error) {
+          setAgentError(e.error);
           setStreamingMsg({ text: `Error: ${e.error}`, streaming: false });
           return;
         }
         if (e.provider) {
           const label = e.model || e.provider;
-          const mode = e.gradientUsed ? "gradient-assisted" : "nemotron-only";
+          const mode = e.mode === "claude" ? "Claude" : e.mode === "ml" ? "ML only" : "Nemotron + ML";
           setStreamingMsg({ provider: `${label} · ${mode}` });
+        }
+        if (e.reset) {
+          streamBuf.current = "";
+          setStreamingMsg({ text: "", provider: "RULE-BASED · Nemotron + ML" });
         }
         if (e.delta) {
           streamBuf.current += e.delta;
@@ -266,7 +278,9 @@ export function AgentChat({ business }: { business: Business }) {
         }
       });
     } catch (err) {
-      setStreamingMsg({ text: `Error: ${err instanceof Error ? err.message : "failed"}`, streaming: false });
+      const msg = err instanceof Error ? err.message : "failed";
+      setAgentError(msg);
+      setStreamingMsg({ text: `Error: ${msg}`, streaming: false });
     } finally {
       // Capture ref value BEFORE clearing — the functional updater runs async,
       // so reading streamBuf.current inside the closure would see the cleared value.
@@ -312,33 +326,27 @@ export function AgentChat({ business }: { business: Business }) {
         <div class="panel-heading">
           <h2 class="panel-title">Your Toronto Agent</h2>
           <p class="panel-desc">
-            {useGradient
-              ? "Nemotron, grounded in the CityFlow demand model, plus Toronto live data, street research, and your revenue/schedule."
-              : "Nemotron answering from Toronto live data, street research, and your revenue/schedule (no demand model)."}
+            {agentMode === "nemotron-ml"
+              ? "Nemotron + the CityFlow demand model, plus Toronto live data, street research, and your revenue/schedule."
+              : agentMode === "ml"
+                ? "Raw CityFlow ML demand forecast — predicted customer counts by hour, no language model."
+                : "Claude answering from Toronto live data, street research, and your revenue/schedule."}
           </p>
         </div>
         <div class="agent-header-side">
           <span class="agent-model-badge">{business.businessType}</span>
-          <div class="model-toggle" role="group" aria-label="Response model">
-            <button
-              type="button"
-              class={`model-toggle-opt${useGradient ? "" : " is-active"}`}
-              aria-pressed={!useGradient}
-              onClick={() => setUseGradient(false)}
-              title="Pure Nemotron LLM — no ML demand model in the prompt"
+          <label class="agent-mode-wrap">
+            <span class="muted" style={{ fontSize: "10px" }}>Response model</span>
+            <select
+              class="biz-select agent-mode-select"
+              value={agentMode}
+              onChange={(e) => setAgentMode((e.target as HTMLSelectElement).value as AgentMode)}
             >
-              Nemotron
-            </button>
-            <button
-              type="button"
-              class={`model-toggle-opt${useGradient ? " is-active" : ""}`}
-              aria-pressed={useGradient}
-              onClick={() => setUseGradient(true)}
-              title="Feed the gradient demand model's predictions into Nemotron"
-            >
-              + Demand model
-            </button>
-          </div>
+              <option value="nemotron-ml">Nemotron + ML</option>
+              <option value="ml">ML only</option>
+              <option value="claude">Claude</option>
+            </select>
+          </label>
         </div>
       </header>
 
@@ -392,6 +400,12 @@ export function AgentChat({ business }: { business: Business }) {
           </div>
         )}
       </div>
+
+      {agentError && (
+        <div class="agent-error-banner" role="alert">
+          {agentError}
+        </div>
+      )}
 
       {/* ---- Expanded heatmap ---- */}
       {dataExpanded && hasData && (

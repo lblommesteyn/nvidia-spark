@@ -2,8 +2,10 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { businesses, snapshots, businessHistory, businessSchedule, type BusinessInput } from "./db.ts";
+import { businesses, sessions, snapshots, businessHistory, businessSchedule, type BusinessInput, type SessionRecord } from "./db.ts";
 import { geocode } from "./geo.ts";
+import { clientIp, isValidEmail, newToken, sessionFromRequest, SESSION_HEADER } from "./auth.ts";
+import { acquireModelSlot, hit, LIMITS } from "./ratelimit.ts";
 import { CIVIC_SOURCES, getCivicSource, loadCivicSource, sourceUrl } from "./sources/civic.ts";
 import { getAirQuality, getWeather } from "./sources/environment.ts";
 import { LIVE_CHANNELS, resolveChannel } from "./sources/livetv.ts";
@@ -21,7 +23,7 @@ import {
   weekForecastForPoint,
 } from "./ai/forecast.ts";
 import { SAMPLE_LOCATIONS, exampleForPoint, toJsonl } from "./ai/dataset.ts";
-import { askForBusiness, askForPoint, buildBusinessAgentRequest } from "./ai/agent.ts";
+import { askForBusiness, askForPoint, buildBusinessAgentRequest, mlOnlyAnswer } from "./ai/agent.ts";
 import { enqueueBusinessResearch, researchStatus, runBusinessResearch } from "./ai/web-agent.ts";
 import { findSimilarMoments } from "./ai/patterns.ts";
 import { startSnapshotService } from "./ai/snapshot.ts";
@@ -32,7 +34,18 @@ import {
   unregisterSseClient,
   sseClientCount,
 } from "./ai/alerts.ts";
-import { activeProvider, chat, chatStream, describeProvider } from "./ai/provider.ts";
+import {
+  activeProvider,
+  chat,
+  chatStream,
+  describeChain,
+  isWeakAnswer,
+  mockAnswerStream,
+  resolveProvider,
+  warmNemotron,
+} from "./ai/provider.ts";
+import { llmLogPath } from "./ai/llm-log.ts";
+import { bootstrapNemotronEnv } from "./ai/nemotron-bootstrap.ts";
 import { mlWeeklyProfile, mlAvailable, resetMlAvailability } from "./ai/mlforecast.ts";
 import { parakeetHealth, parakeetTranscribe, PARAKEET_BASE } from "./ai/parakeet.ts";
 import { nearestCameras, cameraImageUrl } from "./sources/cameras.ts";
@@ -47,12 +60,67 @@ try {
   // no .env present; sources fall back to keyless/demo modes
 }
 
-const app = new Hono();
+// Session is attached to the request context by the guardrail middleware so
+// downstream handlers can read the authenticated operator/business.
+type AppEnv = { Variables: { session: SessionRecord | null } };
+const app = new Hono<AppEnv>();
 // Allow the (separately-hosted) frontend to call this API cross-origin. Defaults
 // to "*" for the public demo; set CORS_ORIGIN=https://your-app.vercel.app to lock
-// it down. No credentials/cookies are used, so "*" is safe here.
+// it down. No credentials/cookies are used, so "*" is safe here. The custom
+// session header must be allow-listed so browsers send it cross-origin.
 const corsOrigin = process.env.CORS_ORIGIN ?? "*";
-app.use("/api/*", cors({ origin: corsOrigin }));
+app.use("/api/*", cors({
+  origin: corsOrigin,
+  allowHeaders: ["Content-Type", "Authorization", SESSION_HEADER],
+  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+}));
+
+// ---- Guardrails: per-IP rate limit + session gate on protected endpoints ----
+// Public endpoints don't need a session (health, onboarding, AI manifest); every
+// other /api route requires a valid session token so a public deployment can't
+// be scraped or used to hammer the model anonymously.
+const PUBLIC_API = new Set(["/api/health", "/api/manifest", "/api/context"]);
+function isPublicApiPath(path: string): boolean {
+  return PUBLIC_API.has(path) || path.startsWith("/api/auth/");
+}
+
+app.use("/api/*", async (c, next) => {
+  if (c.req.method === "OPTIONS") return next();
+  const path = new URL(c.req.url).pathname;
+  const ip = clientIp(c);
+
+  // 1. Coarse per-IP rate limit across the whole API.
+  const ipLimit = hit(`ip:${ip}`, LIMITS.ipPerMin(), 60_000);
+  if (!ipLimit.allowed) {
+    return c.json({ error: "rate_limited", scope: "ip", retryAfter: ipLimit.retryAfter }, 429, {
+      "Retry-After": String(ipLimit.retryAfter),
+    });
+  }
+
+  // 2. Public endpoints skip the session requirement.
+  if (isPublicApiPath(path)) {
+    c.set("session", null);
+    return next();
+  }
+
+  // 3. Everything else requires a valid session token.
+  const session = sessionFromRequest(c);
+  if (!session) {
+    return c.json({ error: "unauthorized", message: "Complete onboarding to use CityFlow." }, 401);
+  }
+  c.set("session", session);
+
+  // 4. Expensive model endpoints get a tighter per-session budget.
+  if (path === "/api/agent" || path === "/api/agent/stream") {
+    const agentLimit = hit(`agent:${session.token}`, LIMITS.agentPerMin(), 60_000);
+    if (!agentLimit.allowed) {
+      return c.json({ error: "rate_limited", scope: "agent", retryAfter: agentLimit.retryAfter }, 429, {
+        "Retry-After": String(agentLimit.retryAfter),
+      });
+    }
+  }
+  return next();
+});
 
 const TORONTO: GeoPoint = { lon: -79.3839, lat: 43.6535 };
 
@@ -66,6 +134,8 @@ app.get("/api/health", (c) =>
   c.json({
     ok: true,
     provider: activeProvider(),
+    llm: describeChain(),
+    llmLog: llmLogPath(),
     sources: CIVIC_SOURCES.map((s) => s.key),
     sseClients: sseClientCount(),
     patternRows: snapshots.count(),
@@ -80,6 +150,141 @@ app.get("/api/health", (c) =>
 // ---- AI-friendly manifest (tools + endpoints) ----
 app.get("/api/manifest", (c) => c.json(aiManifest()));
 app.get("/.well-known/ai-plugin.json", (c) => c.json(aiManifest()));
+
+// ---- Auth / onboarding (public deployment guardrail) ----
+/**
+ * Create (or geocode → persist) a business from a request body. Shared by the
+ * onboarding flow and the in-app "+ Business" action. Throws an Error whose
+ * `.status` carries the HTTP code for the caller to surface.
+ */
+async function createBusinessFromInput(
+  body: Record<string, unknown>,
+  owner?: { email?: string; name?: string },
+): Promise<ReturnType<typeof businesses.create>> {
+  if (!body?.name || !body?.businessType || !body?.address) {
+    const err = new Error("name, businessType and address are required") as Error & { status?: number };
+    err.status = 400;
+    throw err;
+  }
+  let lon = Number(body.lon);
+  let lat = Number(body.lat);
+  let neighbourhood = body.neighbourhood as string | undefined;
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    const geo = await geocode(String(body.address));
+    if (!geo) {
+      const err = new Error("could not geocode address within Toronto") as Error & { status?: number };
+      err.status = 422;
+      throw err;
+    }
+    lon = geo.lon;
+    lat = geo.lat;
+    neighbourhood = neighbourhood ?? geo.neighbourhood;
+  }
+  const transit = transitContext({ lon, lat });
+  const input: BusinessInput = {
+    name: String(body.name),
+    businessType: String(body.businessType),
+    address: String(body.address),
+    lon,
+    lat,
+    ward: body.ward as string | undefined,
+    neighbourhood,
+    headcount: Number(body.headcount) || 1,
+    notes: body.notes as string | undefined,
+    opensAt: clampHour(body.opensAt),
+    closesAt: clampHour(body.closesAt),
+    eventRadiusKm: posNum(body.eventRadiusKm),
+    customersPerWorkerHour: posNum(body.customersPerWorkerHour),
+    hourlyWage: posNum(body.hourlyWage),
+    minStaff: posInt(body.minStaff),
+    maxStaffPerHour: posInt(body.maxStaffPerHour),
+    allowedShiftLengths: cleanShiftLengths(body.allowedShiftLengths),
+    transitRelevance: transit.relevance,
+    nearbyRoutes: transit.routes.map((r) => r.name),
+  };
+  const created = businesses.create(input, owner);
+  enqueueBusinessResearch(created);
+  return created;
+}
+
+function getOwnedBusiness(c: Parameters<typeof sessionFromRequest>[0], id: string) {
+  const session = sessionFromRequest(c);
+  if (!session) return null;
+  const b = businesses.get(id);
+  if (!b) return null;
+  return businesses.owns(b.id, session.operatorEmail) ? b : null;
+}
+
+/**
+ * Onboarding: the multi-step form posts operator identity + business details +
+ * acceptance of the acceptable-use terms. We validate, throttle by IP and email,
+ * create the business, and mint a session token that gates the rest of the API.
+ */
+app.post("/api/auth/register", async (c) => {
+  const ip = clientIp(c);
+  const reg = hit(`register:${ip}`, LIMITS.registerPerHour(), 3_600_000);
+  if (!reg.allowed) {
+    return c.json({ error: "rate_limited", scope: "register", retryAfter: reg.retryAfter }, 429, {
+      "Retry-After": String(reg.retryAfter),
+    });
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const operatorName = typeof body?.operatorName === "string" ? body.operatorName.trim() : "";
+  const operatorEmail = typeof body?.operatorEmail === "string" ? body.operatorEmail.trim().toLowerCase() : "";
+  const acceptedTerms = body?.acceptedTerms === true;
+  const business = body?.business as Record<string, unknown> | undefined;
+
+  if (!operatorName || operatorName.length > 120) return c.json({ error: "operator name is required" }, 400);
+  if (!isValidEmail(operatorEmail)) return c.json({ error: "a valid email is required" }, 400);
+  if (!acceptedTerms) return c.json({ error: "you must accept the acceptable-use terms" }, 400);
+  if (!business) return c.json({ error: "business details are required" }, 400);
+
+  // Throttle repeat signups from the same email (abuse guard).
+  const sinceHour = new Date(Date.now() - 3_600_000).toISOString();
+  if (sessions.countByEmailSince(operatorEmail, sinceHour) >= 5) {
+    return c.json({ error: "rate_limited", scope: "email", retryAfter: 3600 }, 429, { "Retry-After": "3600" });
+  }
+
+  let created;
+  try {
+    created = await createBusinessFromInput(business, { email: operatorEmail, name: operatorName });
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    return c.json({ error: err instanceof Error ? err.message : "could not create business" }, status as 400);
+  }
+
+  const token = newToken();
+  sessions.create({
+    token,
+    businessId: created.id,
+    operatorName,
+    operatorEmail,
+    company: (business.name as string) ?? undefined,
+  });
+  return c.json({ token, business: created, operator: { name: operatorName, email: operatorEmail } }, 201);
+});
+
+/** Validate an existing token (used on app load to resume a session). */
+app.get("/api/auth/session", (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  const business = session.businessId && businesses.owns(session.businessId, session.operatorEmail)
+    ? businesses.get(session.businessId) ?? null
+    : null;
+  return c.json({
+    operator: { name: session.operatorName, email: session.operatorEmail },
+    business,
+    createdAt: session.createdAt,
+  });
+});
+
+/** Sign out — invalidate the token. */
+app.post("/api/auth/logout", (c) => {
+  const session = sessionFromRequest(c);
+  if (session) sessions.remove(session.token);
+  return c.json({ ok: true });
+});
 
 // ---- Geocoding ----
 app.get("/api/geocode", async (c) => {
@@ -208,13 +413,18 @@ app.get("/api/holidays", (c) => {
 });
 
 // ---- Location context (the AI-friendly digest) ----
+// Aggregated, location-scoped civic + environment context. Public read-only:
+// the output is purely public Toronto data (weather, air quality, transit,
+// permits, etc.) scoped to a point — it contains no private business fields —
+// so it needs no session. Defaults to downtown Toronto when no location given.
 app.get("/api/context", async (c) => {
   const businessId = c.req.query("businessId");
   const radiusM = Number(c.req.query("radius") ?? 750);
   if (businessId) {
-    const b = businesses.get(businessId);
-    if (!b) return c.json({ error: "business not found" }, 404);
-    return c.json(await buildContext(scopeFromBusiness(b, radiusM)));
+    // Use the business only to resolve a location to scope public data around.
+    const b = getOwnedBusiness(c, businessId) ?? businesses.get(businessId);
+    if (b) return c.json(await buildContext(scopeFromBusiness(b, radiusM)));
+    // Unknown id → fall through to downtown Toronto rather than erroring.
   }
   const p = pointFromQuery(c.req.query("lon"), c.req.query("lat"));
   return c.json(
@@ -228,7 +438,9 @@ app.get("/api/forecast", async (c) => {
   const radiusM = Number(c.req.query("radius") ?? 750);
   try {
     if (businessId) {
-      return c.json(await forecastForBusiness(businessId, radiusM));
+      const b = getOwnedBusiness(c, businessId);
+      if (!b) return c.json({ error: "business not found" }, 404);
+      return c.json(await forecastForBusiness(b.id, radiusM));
     }
     const lon = Number(c.req.query("lon"));
     const lat = Number(c.req.query("lat"));
@@ -249,7 +461,9 @@ app.get("/api/forecast/week", async (c) => {
   const radiusM = Number(c.req.query("radius") ?? 750);
   try {
     if (businessId) {
-      return c.json(await weekForecastForBusiness(businessId, radiusM));
+      const b = getOwnedBusiness(c, businessId);
+      if (!b) return c.json({ error: "business not found" }, 404);
+      return c.json(await weekForecastForBusiness(b.id, radiusM));
     }
     const lon = Number(c.req.query("lon"));
     const lat = Number(c.req.query("lat"));
@@ -289,81 +503,57 @@ app.get("/api/forecast/dataset", async (c) => {
 });
 
 // ---- Businesses CRUD ----
-app.get("/api/businesses", (c) => c.json(businesses.list()));
+app.get("/api/businesses", (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  return c.json(businesses.list(session.operatorEmail));
+});
 
 app.get("/api/businesses/:id", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   return b ? c.json(b) : c.json({ error: "not found" }, 404);
 });
 
 app.post("/api/businesses", async (c) => {
+  const session = sessionFromRequest(c);
+  if (!session) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => null);
-  if (!body?.name || !body?.businessType || !body?.address) {
-    return c.json({ error: "name, businessType and address are required" }, 400);
+  try {
+    const created = await createBusinessFromInput(body ?? {}, {
+      email: session.operatorEmail,
+      name: session.operatorName,
+    });
+    return c.json(created, 201);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    return c.json({ error: err instanceof Error ? err.message : "could not create business" }, status as 400);
   }
-  // Geocode the address unless explicit coords are supplied.
-  let lon = Number(body.lon);
-  let lat = Number(body.lat);
-  let neighbourhood = body.neighbourhood as string | undefined;
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-    const geo = await geocode(body.address);
-    if (!geo) return c.json({ error: "could not geocode address within Toronto" }, 422);
-    lon = geo.lon;
-    lat = geo.lat;
-    neighbourhood = neighbourhood ?? geo.neighbourhood;
-  }
-
-  // Always derive transit context server-side from the final coords so the
-  // stored values are authoritative (not trusted from the client preview).
-  const transit = transitContext({ lon, lat });
-
-  const input: BusinessInput = {
-    name: body.name,
-    businessType: body.businessType,
-    address: body.address,
-    lon,
-    lat,
-    ward: body.ward,
-    neighbourhood,
-    headcount: Number(body.headcount) || 1,
-    notes: body.notes,
-    opensAt: clampHour(body.opensAt),
-    closesAt: clampHour(body.closesAt),
-    eventRadiusKm: posNum(body.eventRadiusKm),
-    customersPerWorkerHour: posNum(body.customersPerWorkerHour),
-    hourlyWage: posNum(body.hourlyWage),
-    minStaff: posInt(body.minStaff),
-    maxStaffPerHour: posInt(body.maxStaffPerHour),
-    allowedShiftLengths: cleanShiftLengths(body.allowedShiftLengths),
-    transitRelevance: transit.relevance,
-    nearbyRoutes: transit.routes.map((r) => r.name),
-  };
-  const created = businesses.create(input);
-  enqueueBusinessResearch(created);
-  return c.json(created, 201);
 });
 
 app.get("/api/businesses/:id/research", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const research = researchStatus(b.id);
   return c.json(research ?? { businessId: b.id, status: "pending", briefing: "", sources: [], generatedAt: null });
 });
 
 app.post("/api/businesses/:id/research", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const radiusM = Number(c.req.query("radius") ?? 750);
   return c.json(await runBusinessResearch(b, radiusM));
 });
 
-app.delete("/api/businesses/:id", (c) =>
-  c.json({ deleted: businesses.remove(c.req.param("id")) }),
-);
+app.delete("/api/businesses/:id", (c) => {
+  const b = getOwnedBusiness(c, c.req.param("id"));
+  if (!b) return c.json({ error: "not found" }, 404);
+  if (b.isPublic) return c.json({ error: "forbidden", message: "demo business cannot be deleted" }, 403);
+  return c.json({ deleted: businesses.remove(b.id) });
+});
 
 // ---- Generate business demand baseline on demand ----
 app.post("/api/businesses/:id/generate", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const days = Math.min(Number(c.req.query("days") ?? 90), 365);
   // Dynamically import so the generator only loads when called.
@@ -376,7 +566,7 @@ app.post("/api/businesses/:id/generate", async (c) => {
 
 // ---- Business history (revenue + customer counts) ----
 app.get("/api/businesses/:id/history", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const days = Math.min(Number(c.req.query("days") ?? 90), 365);
   const rows = businessHistory.forBusiness(b.id, days);
@@ -385,7 +575,7 @@ app.get("/api/businesses/:id/history", (c) => {
 });
 
 app.post("/api/businesses/:id/history", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
@@ -403,7 +593,7 @@ app.post("/api/businesses/:id/history", async (c) => {
 
 // ---- Business schedule (staff hours) ----
 app.get("/api/businesses/:id/schedule", (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const upcoming = businessSchedule.upcoming(b.id, 7);
   const recent   = businessSchedule.forBusiness(b.id, 14);
@@ -411,7 +601,7 @@ app.get("/api/businesses/:id/schedule", (c) => {
 });
 
 app.post("/api/businesses/:id/schedule", async (c) => {
-  const b = businesses.get(c.req.param("id"));
+  const b = getOwnedBusiness(c, c.req.param("id"));
   if (!b) return c.json({ error: "not found" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!Array.isArray(body?.rows)) return c.json({ error: "rows array required" }, 400);
@@ -546,10 +736,28 @@ app.post("/api/ml/train", async (c) => {
 app.post("/api/agent", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body?.question) return c.json({ error: "question required" }, 400);
+  if (typeof body.question === "string" && body.question.length > 2000) {
+    return c.json({ error: "question too long (max 2000 chars)" }, 400);
+  }
   const radiusM = Number(body.radiusM) || 750;
+  // Global concurrency cap so a burst of users can't overload the model host.
+  const release = acquireModelSlot();
+  if (!release) {
+    return c.json({ error: "model_busy", message: "The model is at capacity — try again shortly." }, 503, {
+      "Retry-After": "5",
+    });
+  }
   try {
     if (body.businessId) {
-      return c.json(await askForBusiness(body.businessId, body.question, radiusM));
+      const b = getOwnedBusiness(c, String(body.businessId));
+      if (!b) return c.json({ error: "business not found" }, 404);
+      if (body.providerMode === "ml") {
+        return c.json(await mlOnlyAnswer(b.id, radiusM));
+      }
+      return c.json(await askForBusiness(b.id, body.question, radiusM, {
+        useGradient: body.providerMode !== "claude",
+        preferredProvider: body.providerMode === "claude" ? "anthropic" : "nemotron",
+      }));
     }
     const lon = Number(body.lon);
     const lat = Number(body.lat);
@@ -559,6 +767,8 @@ app.post("/api/agent", async (c) => {
     return c.json(await askForPoint(lon, lat, body.question, { radiusM, businessType: body.businessType }));
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "agent error" }, 500);
+  } finally {
+    release();
   }
 });
 
@@ -568,9 +778,28 @@ app.post("/api/agent", async (c) => {
 app.post("/api/agent/stream", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body?.question) return c.json({ error: "question required" }, 400);
+  if (typeof body.question === "string" && body.question.length > 2000) {
+    return c.json({ error: "question too long (max 2000 chars)" }, 400);
+  }
   if (!body.businessId) return c.json({ error: "businessId required for streaming" }, 400);
+  const b = getOwnedBusiness(c, String(body.businessId));
+  if (!b) return c.json({ error: "business not found" }, 404);
   const radiusM = Number(body.radiusM) || 750;
-  const useGradient = body.useGradient !== false;
+  const agentMode = body.providerMode === "claude"
+    ? "claude"
+    : body.providerMode === "ml"
+      ? "ml"
+      : "nemotron-ml";
+  const useGradient = agentMode === "nemotron-ml" ? body.useGradient !== false : false;
+  const preferredProvider = agentMode === "claude" ? "anthropic" : "nemotron";
+
+  // Global concurrency cap so a burst of users can't overload the model host.
+  const release = acquireModelSlot();
+  if (!release) {
+    return c.json({ error: "model_busy", message: "The model is at capacity — try again shortly." }, 503, {
+      "Retry-After": "5",
+    });
+  }
 
   const stream = new ReadableStream<string>({
     async start(controller) {
@@ -582,50 +811,84 @@ app.post("/api/agent/stream", async (c) => {
         }
       };
 
-      // Build the prompt/context once (may throw → report and close).
-      let req;
-      try {
-        req = await buildBusinessAgentRequest(body.businessId, body.question, radiusM, { useGradient });
-      } catch (err) {
-        send({ error: err instanceof Error ? err.message : "agent error" });
+      // ML-only mode: return the raw gradient demand forecast, no LLM involved.
+      if (agentMode === "ml") {
+        const mlStarted = Date.now();
+        try {
+          const ans = await mlOnlyAnswer(b.id, radiusM);
+          send({
+            meta: true,
+            provider: ans.provider,
+            model: ans.model,
+            fallbacks: [],
+            gradientUsed: true,
+            mode: "ml",
+            contextUsed: ans.contextUsed,
+          });
+          console.log(`[agent/stream] provider=ml model=${ans.model} chars=${ans.text.length} durationMs=${Date.now() - mlStarted}`);
+          send({ delta: ans.text });
+        } catch (err) {
+          send({ error: err instanceof Error ? err.message : "ML demand model unavailable" });
+        }
+        send({ done: true });
         try { controller.close(); } catch { /* already closed */ }
+        release();
         return;
       }
 
-      const { provider, model } = describeProvider();
-      send({ meta: true, provider, model, gradientUsed: req.gradientUsed, contextUsed: req.contextUsed });
-
-      // Stream tokens. If streaming yields nothing visible (e.g. a provider whose
-      // delta shape we don't recognise, or output that was entirely a stripped
-      // <think> trace) or throws mid-stream, fall back to a single non-streaming
-      // call so the answer ALWAYS comes through.
-      let emitted = 0;
-      let streamErr: unknown = null;
+      // Build context + warm model in parallel (cached context skips re-fetching feeds).
+      let req;
       try {
-        for await (const delta of chatStream(req.messages, req.opts)) {
-          if (delta) {
-            emitted += delta.length;
-            send({ delta });
-          }
+        [req] = await Promise.all([
+          buildBusinessAgentRequest(b.id, body.question, radiusM, { useGradient, preferredProvider }),
+          preferredProvider === "nemotron" ? warmNemotron() : Promise.resolve(),
+        ]);
+      } catch (err) {
+        send({ error: err instanceof Error ? err.message : "agent error" });
+        try { controller.close(); } catch { /* already closed */ }
+        release();
+        return;
+      }
+
+      const { provider, model, fallbacks } = await resolveProvider(preferredProvider);
+      send({
+        meta: true,
+        provider,
+        model,
+        fallbacks,
+        gradientUsed: req.gradientUsed,
+        mode: agentMode,
+        contextUsed: req.contextUsed,
+      });
+
+      let streamed = "";
+      let streamFailed = false;
+      const answerStarted = Date.now();
+      try {
+        for await (const delta of chatStream(req.messages, req.opts, preferredProvider, false)) {
+          streamed += delta;
+          send({ delta });
         }
       } catch (err) {
-        streamErr = err;
+        streamFailed = true;
+        console.warn("[agent/stream] model stream failed:", err instanceof Error ? err.message : err);
       }
-      console.log(`[agent/stream] provider=${provider} model=${model} streamedChars=${emitted}${streamErr ? ` streamErr=${streamErr instanceof Error ? streamErr.message : String(streamErr)}` : ""}`);
 
-      if (emitted === 0) {
-        try {
-          const result = await chat(req.messages, req.opts);
-          console.log(`[agent/stream] fallback chat() chars=${result.text.length} preview=${JSON.stringify(result.text.slice(0, 120))}`);
-          send({ delta: result.text || "(No response from the model.)" });
-        } catch (err) {
-          console.error(`[agent/stream] fallback chat() failed: ${err instanceof Error ? err.message : String(err)}`);
-          send({ error: err instanceof Error ? err.message : "agent error" });
+      if (streamFailed || isWeakAnswer(streamed)) {
+        console.log(`[agent/stream] falling back to rule-based answer (streamed=${streamed.length} chars, durationMs=${Date.now() - answerStarted})`);
+        send({ reset: true, fallback: "mock" });
+        for await (const delta of mockAnswerStream(req.messages)) {
+          streamed += delta;
+          send({ delta });
         }
+        console.log(`[agent/stream] mock fallback done durationMs=${Date.now() - answerStarted}`);
+      } else {
+        console.log(`[agent/stream] provider=${provider} model=${model} chars=${streamed.length} durationMs=${Date.now() - answerStarted}`);
       }
 
       send({ done: true });
       try { controller.close(); } catch { /* already closed */ }
+      release();
     },
   });
 
@@ -742,11 +1005,21 @@ if (process.env.SERVE_STATIC === "1") {
 }
 
 const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port });
-console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${activeProvider()})`);
 
-// Start background snapshot capture — builds the historical pattern library over time.
-startSnapshotService(15 * 60_000);
+async function main() {
+  await bootstrapNemotronEnv();
 
-// Start proactive alert monitor — diffs signals every 5 min and broadcasts alerts via SSE.
-startMonitor(5 * 60_000);
+  serve({ fetch: app.fetch, port });
+  console.log(`[toronto-monitor] API on http://localhost:${port} (LLM provider: ${activeProvider()})`);
+
+  // Start background snapshot capture — builds the historical pattern library over time.
+  startSnapshotService(15 * 60_000);
+
+  // Start proactive alert monitor — diffs signals every 5 min and broadcasts alerts via SSE.
+  startMonitor(5 * 60_000);
+}
+
+main().catch((err) => {
+  console.error("[toronto-monitor] failed to start:", err);
+  process.exit(1);
+});
