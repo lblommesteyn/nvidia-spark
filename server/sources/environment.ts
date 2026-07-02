@@ -36,6 +36,46 @@ function aqiCategory(aqi: number): string {
   return "Hazardous";
 }
 
+/**
+ * Last successful weather reading, so a slow/failed refresh reuses real data
+ * instead of a hardcoded placeholder. Keyed by rounded lat,lon; all CityFlow
+ * points are downtown Toronto so any recent reading is a good stand-in.
+ */
+const lastGoodWeather = new Map<string, WeatherNow>();
+const weatherKey = (p: GeoPoint) => `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
+
+// Toronto climate normals (avg daytime temp °C by month, Jan..Dec). Used only
+// when no live reading has ever been fetched — never a winter value in summer.
+const TORONTO_MONTHLY_C = [-3, -2, 3, 10, 17, 23, 26, 25, 20, 13, 6, 0];
+
+/**
+ * Seasonally-sane weather fallback for Toronto. Prefers the last live reading
+ * for this (or any nearby) location; otherwise derives a reasonable estimate
+ * from the current month so we never show snow in July.
+ */
+export function weatherFallbackData(p?: GeoPoint): WeatherNow {
+  if (p) {
+    const exact = lastGoodWeather.get(weatherKey(p));
+    if (exact) return exact;
+  }
+  const anyRecent = lastGoodWeather.values().next().value as WeatherNow | undefined;
+  if (anyRecent) return anyRecent;
+
+  const month = new Date().getMonth();
+  const t = TORONTO_MONTHLY_C[month];
+  const hour = Number(
+    new Intl.DateTimeFormat("en-CA", { hour: "numeric", hour12: false, timeZone: "America/Toronto" }).format(new Date()),
+  ) % 24;
+  return {
+    temperatureC: t,
+    feelsLikeC: t,
+    windKph: 12,
+    humidity: 65,
+    description: "Partly cloudy",
+    isDay: hour >= 6 && hour < 21,
+  };
+}
+
 export async function getWeather(p: GeoPoint): Promise<SourceResult<WeatherNow>> {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}` +
@@ -46,19 +86,21 @@ export async function getWeather(p: GeoPoint): Promise<SourceResult<WeatherNow>>
       fetchJson<{ current: Record<string, number> }>(url),
     );
     const c = raw.current;
+    const data: WeatherNow = {
+      temperatureC: Math.round(c.temperature_2m),
+      feelsLikeC: Math.round(c.apparent_temperature),
+      windKph: Math.round(c.wind_speed_10m),
+      humidity: Math.round(c.relative_humidity_2m),
+      description: WMO[c.weather_code] ?? "Unknown",
+      isDay: c.is_day === 1,
+    };
+    lastGoodWeather.set(weatherKey(p), data);
     return {
       source: "weather",
       status: "live",
       fetchedAt: nowIso(),
       attribution: "Open-Meteo",
-      data: {
-        temperatureC: Math.round(c.temperature_2m),
-        feelsLikeC: Math.round(c.apparent_temperature),
-        windKph: Math.round(c.wind_speed_10m),
-        humidity: Math.round(c.relative_humidity_2m),
-        description: WMO[c.weather_code] ?? "Unknown",
-        isDay: c.is_day === 1,
-      },
+      data,
     };
   } catch (err) {
     return {
@@ -66,7 +108,7 @@ export async function getWeather(p: GeoPoint): Promise<SourceResult<WeatherNow>>
       status: "demo",
       fetchedAt: nowIso(),
       note: err instanceof Error ? err.message : "error",
-      data: { temperatureC: -3, feelsLikeC: -9, windKph: 22, humidity: 71, description: "Light snow", isDay: true },
+      data: weatherFallbackData(p),
     };
   }
 }

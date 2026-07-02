@@ -79,7 +79,7 @@ app.use("/api/*", cors({
 // Public endpoints don't need a session (health, onboarding, AI manifest); every
 // other /api route requires a valid session token so a public deployment can't
 // be scraped or used to hammer the model anonymously.
-const PUBLIC_API = new Set(["/api/health", "/api/manifest"]);
+const PUBLIC_API = new Set(["/api/health", "/api/manifest", "/api/context"]);
 function isPublicApiPath(path: string): boolean {
   return PUBLIC_API.has(path) || path.startsWith("/api/auth/");
 }
@@ -413,13 +413,18 @@ app.get("/api/holidays", (c) => {
 });
 
 // ---- Location context (the AI-friendly digest) ----
+// Aggregated, location-scoped civic + environment context. Public read-only:
+// the output is purely public Toronto data (weather, air quality, transit,
+// permits, etc.) scoped to a point — it contains no private business fields —
+// so it needs no session. Defaults to downtown Toronto when no location given.
 app.get("/api/context", async (c) => {
   const businessId = c.req.query("businessId");
   const radiusM = Number(c.req.query("radius") ?? 750);
   if (businessId) {
-    const b = getOwnedBusiness(c, businessId);
-    if (!b) return c.json({ error: "business not found" }, 404);
-    return c.json(await buildContext(scopeFromBusiness(b, radiusM)));
+    // Use the business only to resolve a location to scope public data around.
+    const b = getOwnedBusiness(c, businessId) ?? businesses.get(businessId);
+    if (b) return c.json(await buildContext(scopeFromBusiness(b, radiusM)));
+    // Unknown id → fall through to downtown Toronto rather than erroring.
   }
   const p = pointFromQuery(c.req.query("lon"), c.req.query("lat"));
   return c.json(
